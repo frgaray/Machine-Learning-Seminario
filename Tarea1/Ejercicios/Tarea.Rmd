@@ -1,0 +1,292 @@
+---
+title: "Tarea 1"
+output: pdf_document
+---
+## Ejercicio 4
+```{r, include=F}
+data <- read.csv("Datos/Preg4.csv")
+data$logPop <- log(data$Pop)
+```
+
+Analicemos los datos.
+
+```{r, echo=F}
+library(ggplot2)
+ggplot(data=data,
+       aes(x=Age, y=Cases/Pop, colour=City)) +
+  geom_point() +
+  theme_classic()
+```
+
+Podemos observar una fuerte tendencia en los datos respecto a la tasa de incidencia
+de los casos de cáncer de pulmón contra la edad, hay un claro incremento conforme
+avanzamos en los grupos de edad.
+
+También podríamos argumentar que la distinción por ciudades no hace un gran cambio
+a simple vista. Probablemente la inclusión de esta variable cause ruido en nuestro
+modelo, pero no podemos descartar que afecte la ciudad para la tasa hasta hacer una
+prueba formal.
+
+### Modelos con Poisson
+
+Para descartar este hecho, hemos hecho dos modelos y los contrastamos. En el primero
+consideraremos todas las interacciones entre la edad y la ciudad, y en el segundo
+únicamente a los grupos de edad.
+
+En ambos casos los modelos fueron basados en la distribución Poisson con liga logarítmica.
+
+```{r, include=F}
+fit.poi1 <- glm(Cases ~ Age*City + offset(logPop),
+               family = poisson(link='log'),
+               data = data)
+fit.poi2 <- glm(Cases ~ Age + offset(logPop),
+                family = poisson(link='log'),
+                data = data)
+summary(fit.poi1)
+summary(fit.poi2)
+```
+
+Nuestro primer modelo con todas las interacciones entre ciudad y grupos de edad
+no cumple siquiera con los supuestos, mientras que el segundo únicamente considerando
+los grupos de edad sí los cumple.
+
+```{r, include=F}
+library(DHARMa)  
+set.seed(1)
+fit.poi1.res <- simulateResiduals(fit.poi1)
+plot(fit.poi1.res)
+fit.poi2.res <- simulateResiduals(fit.poi2)
+plot(fit.poi2.res)
+```
+
+Además de esto, el primer modelo generó una barbaridad de coeficientes. Deseamos poder
+considerar al segundo modelo en su lugar. En este caso usamos criterios como el AIC,
+BIC y una prueba de bondad de ajuste ya que estos modelos están anidados y queremos
+tomar al segundo modelo, que es una versión reducida del primero.
+
+Primero los AIC y BIC:
+
+```{r}
+c(AIC(fit.poi1), AIC(fit.poi2))
+c(BIC(fit.poi1), BIC(fit.poi2))
+```
+
+Tenemos menores AIC y BIC para el segundo modelo.
+
+Ahora la prueba de bondad de ajuste:
+
+```{r, echo=F}
+anova(fit.poi1, fit.poi2, test = 'Chisq')
+```
+
+Como obtuvimos un p-value de 0.32, no tenemos evidencia en contra de que debemos
+tomar el modelo completo ante el reducido. Es decir, podemos quedarnos con el reducido.
+
+Y esto hace mucho sentido ya que desde un inicio, en la gráfica pudimos observar
+que independientemente de la ciudad, las tasas de incidencia parecían ser muy iguales
+entre todas.
+
+
+### Modelo Binomial Negativo
+
+Ahora que hemos seleccionado un buen modelo Poisson con liga logarítmica, también probaremos
+un ajuste con la distribución Binomial Negativa (liga logarítmica de igual manera).
+
+```{r, include=F}
+library(MASS)
+fit.nb <- glm.nb(Cases ~ Age + offset(logPop),
+                 link = 'log',
+                 data = data)
+```
+
+Este nuevo modelo con la distribución Binomial Negativa también cumple con los
+supuestos.
+
+```{r, include=F}
+set.seed(1)
+fit.nb.res <- simulateResiduals(fit.nb)
+plot(fit.nb.res)
+```
+
+Por lo que podemos comparar los AIC y BIC de este modelo con el Poisson anterior
+y decidirnos por alguno:
+
+```{r}
+c(AIC(fit.nb), AIC(fit.poi2))
+c(BIC(fit.nb), BIC(fit.poi2))
+```
+
+El modelo Poisson tiene menores índices, por lo que también lo seleccionamos por
+encima del binomial negativo.
+
+### Intervalos de Confianza: Grupos de Edad
+
+Mostraremos intervalos de confianza al 95% para los diferentes grupos de edades:
+
+```{r, echo=F}
+library(multcomp)
+K=matrix(c(1, 0, 0, 0, 0,
+           1, 1, 0, 0, 0,
+           1, 0, 1, 0, 0,
+           1, 0, 0, 1, 0,
+           1, 0, 0, 0, 1), ncol=5, nrow=5, byrow=TRUE)
+fitE <- glht(fit.poi2, linfct = K)
+fitci <- confint(fitE, level = 0.95)
+
+confint <- exp(fitci$confint)
+ci.lwr <- confint[,2]
+ci.upr <- confint[,3]
+
+ggplot(data=data,
+       aes(x=Age, y=Cases/Pop, colour=City)) +
+  geom_point() +
+  geom_segment(aes(x=1, y=ci.lwr[1], xend=1, yend=ci.upr[1]), linetype=2, color='black') +
+  geom_segment(aes(x=2, y=ci.lwr[2], xend=2, yend=ci.upr[2]), linetype=2, color='black') +
+  geom_segment(aes(x=3, y=ci.lwr[3], xend=3, yend=ci.upr[3]), linetype=2, color='black') +
+  geom_segment(aes(x=4, y=ci.lwr[4], xend=4, yend=ci.upr[4]), linetype=2, color='black') +
+  geom_segment(aes(x=5, y=ci.lwr[5], xend=5, yend=ci.upr[5]), linetype=2, color='black') +
+  theme_classic()
+```
+
+A ojo gracias a estos intervalos de confianza podemos suponer que en efecto, a mayor
+edad mayores tasas de incidencias. Pero haremos una prueba para verificar esto.
+
+Contrastamos los dos primeros grupos de edad, 40-54 y 55-59, contra los dos últimos,
+65-69 y 70-74, ya que a ojo es evidente que a gran escala sí podemos concluir
+que hay un aumento en la tasa de incidencia de casos de cáncer de pulmón.
+
+Serán pruebas simultáneas siguiendo la lógica
+
+$H_0:\mu(Cases/Pop\ |\ AgeGroup_{70-74}) \leq \mu(Cases/Pop\ |\ AgeGroup_{40-54})$
+
+Y más estrictamente contrastamos la siguiente hipótesis:
+
+$H_0:\beta_4 - \beta_0 \leq 0\ \cap\ \beta_3 - \beta_0 \leq 0\ \cap\ \beta_4 - \beta_1 \leq 0\ \cap \beta_3 - \beta_1 \leq 0$
+
+Es decir, las pruebas del primer grupo contra los últimos dos grupos de edad, y
+del segundo grupo contra los dos últimos grupos de edad.
+
+```{r, echo=F}
+K=matrix(c(-1,  0, 0, 0, 1,
+           -1,  0, 0, 1, 0,
+            0, -1, 0, 0, 1,
+            0, -1, 0, 1, 0), ncol=5, nrow=4, byrow=T)
+m=c(0,0,0,0)
+summary(glht(fit.poi2, linfct = K, rhs=m, alternative='greater'))
+```
+
+En todas las pruebas obtuvimos un p-value menor al 0.05, por lo que en efecto
+tenemos evidencia en contra de que al aumentar la edad se reduce el riesgo.
+
+Es decir, que lo que suponíamos se cumple. A mayor edad mayor riesgo de padecer
+cáncer de pulmón.
+
+### Modelo con Edad Continua
+
+Por último consideramos un modelo suponiendo que la edad es una variable continua,
+no categórica. Para eso les dimos una edad puntual a cada observación de cada grupo.
+Ésta fue el punto medio de su grupo de edad (por ejemplo al Grupo 40-54 se le asignó
+la edad de 47 años)
+
+```{r, include=F}
+data1 <- data
+data1$Ageprima <- data1$X
+data1[data1$Age=="40-54",]$Ageprima <- (54+40)/2
+data1[data1$Age=="55-59",]$Ageprima <- (55+59)/2
+data1[data1$Age=="60-64",]$Ageprima <- (60+64)/2
+data1[data1$Age=="65-69",]$Ageprima <- (65+69)/2
+data1[data1$Age=="70-74",]$Ageprima <- (70+74)/2
+```
+
+Creamos 4 modelos, 2 con Poisson y liga logarítmica y 2 con Binomial Negativa y la 
+misma función liga. Para cada distribución consideramos un modelo con sólo interacciones
+de la edad vista como variable continua, y para su segundo modelo respectivo uno donde
+se tome en cuenta la edad y la edad^2 como variables continuas.
+
+```{r, include=F}
+fit1 <- glm(Cases ~ Ageprima + offset(logPop),
+               family = poisson(link='log'),
+               data = data1)
+fit2 <- glm(Cases ~ Ageprima + I(Ageprima^2) + offset(logPop),
+               family = poisson(link='log'),
+               data = data1)
+fit3 <- glm.nb(Cases ~ Ageprima + offset(logPop),
+                 link = 'log',
+                 data = data1)
+fit4 <- glm.nb(Cases ~ Ageprima + I(Ageprima^2) + offset(logPop),
+                 link = 'log',
+                 data = data1)
+
+set.seed(1)
+fit1.res <- simulateResiduals(fit1)
+plot(fit1.res)
+fit2.res <- simulateResiduals(fit2)
+plot(fit2.res)
+fit3.res <- simulateResiduals(fit3)
+plot(fit3.res)
+fit4.res <- simulateResiduals(fit4)
+plot(fit4.res)
+
+Poi <- fit2
+BN <- fit4
+```
+
+Desafortunadamente sólo 2 de los 4 modelos cumplen con los supuestos, y coinciden
+en ser los dos modelos donde se toma en cuenta la influencia de la edad y la edad^2
+(es decir tenemos un modelo Poisson y uno Binomial Negativo).
+
+A continuación mostramos sus AIC y BIC:
+
+```{r}
+c(AIC(Poi), AIC(BN))
+c(BIC(Poi), BIC(BN))
+```
+
+Por lo que consideraremos el Poisson.
+
+Para finalizar este reporte, mostraremos intervalos de confianza continuos usando
+este último modelo tomando a la edad como variable continua para
+apoyar el hecho de que a mayor edad, mayor incidencia de cáncer de pulmón.
+
+```{r, echo=F}
+age <- seq(from = 40, to = 74, by = .5)
+K <- cbind(1, age, age^2)
+fitE <- glht(fit2, linfct = K)
+fitci <- confint(fitE, level = 0.95)
+
+plot(x = data1$Ageprima, y = data1$Cases/data1$Pop)
+lines(age, exp(coef(fitE)[1:69]), col="red")
+lines(age, exp(fitci$confint[1:69,"upr"]), col="red", lty=2)
+lines(age, exp(fitci$confint[1:69,"lwr"]), col="red", lty=2)
+```
+
+
+Para dar un poco más de rigurisidad veamos que esto tiene sentido, ya que nuestra
+variable edad sólo nos interesa en valores entre 40 y 74 años, es decir
+$40 \leq x \leq 74$, donde x representa la edad de algún paciente. Y si a mayor
+edad, mayor probabilidad de tener cáncer, eso nos implicaría que nuestra
+función de incidencia es creciente respecto a la edad. Lo que a su vez lo podemos
+traducir en que si tenemos una derivada positiva de esta función para el intervalo
+$[40,\ 74]$, entonces en efecto podemos concluir lo deseado. 
+
+Esto se cumple ya que, equivalentemente, la derivada de nuestra función liga se ve así:
+
+$\frac{d}{dx}\mu(Cases/Pop\ |\ Age = x) = \frac{d}{dx}(\beta_0 + \beta_1x + \beta_2x^2)$
+$= \beta_1 + 2\beta_2x$, y dado a que nuestros valores del modelo de $\beta_1$ y $\beta_2$
+son respectivamente 0.3723 y -0.0025, la recta $\beta_1 + 2\beta_2x$ es positiva
+en el intervalo $(-\infty, \frac{-\beta_1}{2\beta_2}) = (-\infty, 74.46)$.
+
+En particular la derivada $\frac{d}{dx}\mu(Cases/Pop\ |\ Age = x) = \beta_1 + 2\beta_2x$
+es positiva en el intervalo $[40,\ 74]$.
+
+Con lo que concluimos que en efecto a mayor edad, mayor indicencia en los casos
+de cáncer de pulmón, pues la función de tasa de incidencia es creciente en el
+intervalo deseado.
+
+
+
+
+
+
+
+## Ejercicio 5
