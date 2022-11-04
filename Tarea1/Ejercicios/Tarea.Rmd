@@ -290,3 +290,117 @@ intervalo deseado.
 
 
 ## Ejercicio 5
+
+Presentaremos la gráfica de los datos, donde la notación usada por simplicidad es
+la siguiente.
+
+Para el tipo de viviendas: Tower=To, Atrium=At, Apartment=Ap, Terrace=Te
+
+Para los niveles ordinales: Low=L, Medium=M, High=H
+
+Además los datos son presentados en el formato "Vivienda.Influencia.Contacto".
+Por ejemplo la etiqueta To.M.L nos indica que hablamos de los inquilinos con vivienda
+tipo Tower, que perciben su influencia del mantenimiento de la vivienda como Medium,
+y que su contacto con el resto de inquilinos es Low.
+
+```{r, echo=F}
+data <- read.csv("Datos/Preg5.csv")
+
+#i)
+library(lessR)
+data$Type.Infl.Cont <- factor(paste(substr(data$Type, 1, 2),           #Tower=To, Atrium=At, ...
+                                    substr(data$Infl, 1, 1),           #High=H, Medium=M, Low=L
+                                    substr(data$Cont, 1, 1),           #High=H, Low=L
+                                    sep= '.'))
+Satisfaction <- data$Sat
+Type.Infl.Cont <- data$Type.Infl.Cont
+BarChart(Type.Infl.Cont, by=Satisfaction, stack100=T, horiz=T)
+```
+
+En general no podemos observar grandes patrones, salvo unos pocos.
+
+Por ejemplo, aquellos inquilinos que se consideran con influencia en el mantenimiento
+como High y a su vez tienen buena comunicación con los demás, su nivel de satisfacción
+siempre es mayor al 50%, esto hace sentido ya que sentir que su opinión importa
+y tener buena comunicación con los demás puede influir en sentirse cómodos en su vivienda.
+
+Por otro lado, cuando se consideran con influencia Low y comunicación Low, salvo por
+los inquilinos que viven en Tower, tienen un índice del 40% en sentirse poco satisfechos.
+
+Otro dato a notar, es que en general los individuos que viven en Tower tienden a ser
+los que se sienten más satisfechos, seguidos por los que viven en Apartment.
+
+```{r}
+#ii)
+library(VGAM)
+
+data$Sat <- factor(data$Sat, levels=c('Low', 'Medium', 'High'))
+data$Infl <- factor(data$Infl, levels=c('Low', 'Medium', 'High'))
+data$Type <- factor(data$Type, levels=c('Tower', 'Apartment', 'Atrium', 'Terrace'))
+data$Cont <- factor(data$Cont, levels=c('Low', 'High'))
+
+fit.complete <- vglm(Sat ~ Type*Infl*Cont,
+                     family=multinomial(refLevel='Low'),
+                     data)
+fit <- vglm(Sat ~ Type + Infl + Cont,
+            family=multinomial(refLevel='Low'),
+            data)
+#anova(fit1, fit2, test='LRT', type='I')
+lrtest(fit.complete, fit) # pvalue > 0.05, no hay evidencia para descartar el reducido
+c(AIC(fit.complete), AIC(fit))
+c(BIC(fit.complete), BIC(fit))
+```
+
+```{r}
+#iii)
+
+fit.p <- vglm(Sat ~ Type + Infl + Cont,
+              family=cumulative(parallel=T),
+              data)
+fit.nop <- vglm(Sat ~ Type + Infl + Cont,
+                family=cumulative(parallel=F),
+                data)
+lrtest(fit.p, fit.nop) # pvalue > 0.05, no hay evidencia en contra de descartar el completo,
+                       # es decir podemos quedarnos con el supuesto de probas proporcionales.
+c(AIC(fit.nop), AIC(fit.p))
+c(BIC(fit.nop), BIC(fit.p))
+```
+
+```{r}
+#iv)
+c(AIC(fit.p), AIC(fit))
+c(BIC(fit.p), BIC(fit))
+
+library(dplyr)
+combinations <- unique(data[,3:5]) %>% arrange(Infl, Cont, Type)
+odds <- predict(fit.p, combinations, type='response')
+odds
+combinations
+infl.low <- odds[1:8,]
+infl.med <- odds[9:16,]
+infl.high <- odds[17:24,]
+comb.tags <- c('To-L', 'Ap-L', 'At-L', 'Te-L',
+               'To-H', 'Ap-H', 'At-H', 'Te-H')
+row.names(infl.low) <- comb.tags
+row.names(infl.med) <- comb.tags
+row.names(infl.high)<- comb.tags
+
+colors <- c('#000000', '#55415f', '#646964', '#d77355',
+            '#508cd7', '#64b964', '#e6c86e', '#dcf5ff')
+barplot(infl.low, beside = T, main = 'Inflence = Low', xlab = "Respuesta",
+        ylab = 'Probabilidades', las = 1, col = colors, ylim = c(0,.7))
+legend('topright', legend = rownames(infl.low),
+       bty = 'n', fill = colors)
+barplot(infl.med, beside = T, main = 'Inflence = Medium', xlab = "Respuesta",
+        ylab = 'Probabilidades', las = 1, col = colors, ylim = c(0,.7))
+legend('top', legend = rownames(infl.med),
+       bty = 'n', fill = colors)
+barplot(infl.high, beside = T, main = 'Inflence = High', xlab = "Respuesta",
+        ylab = 'Probabilidades', las = 1, col = colors, ylim = c(0,.7))
+legend('topleft', legend = rownames(infl.high),
+       bty = 'n', fill = colors)
+```
+
+
+
+

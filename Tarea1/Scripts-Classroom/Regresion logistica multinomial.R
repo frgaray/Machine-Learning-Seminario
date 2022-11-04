@@ -7,7 +7,7 @@ gc()
 
 ########################## Lectura y formato BD ###############################
 
-setwd("~/Seminario/Regresion logit multinomial")
+getwd()
 DatosAg <- read.xlsx("Table 8.1 Car preferences.xls",1)
 
 # Acomodamos los datos de forma desagrupada y convertimos
