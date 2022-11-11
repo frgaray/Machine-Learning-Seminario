@@ -2,6 +2,507 @@
 title: "Tarea 1"
 output: pdf_document
 ---
+
+## Ejercicio 1
+
+```{r, include=F}
+data <- read.csv('Datos/Preg1A.csv')
+data$sex <- factor(data$sex, labels = c('Hombre', 'Mujer'))
+```
+
+Inicialmente consideramos un modelo de regresión en donde tomábamos en consideración
+todas las variables (tcresult, age y sex) sin interacción.
+Sin embargo, a pesar de que este modelo inicial tenía sentido (pasó la prueba F 
+de la tabla ANOVA), no paso ninguna prueba de los supuestos.
+
+A continuación mostramos el p-value de la prueba F, gráficas mostrando el mal
+comportamiento del modelo respecto a los supuestos y una tabla donde mostramos
+el test realizado al modelo y el p-value obtenido.
+
+```{r, echo=F}
+#i)
+fit <- lm(bpdiast ~ tcresult + age + sex, data)
+summary(fit) #El modelo tiene sentido, pues p-value = 2.7e-05
+#' Prueba supuestos de un modelo
+#' 
+#' `pruebas` imprime los test que realiza al modelo recibido y sus p-values 
+#'           correspondientes.
+#'           
+#' @param `fit` el modelo, de preferencia clase lm al que hará las pruebas.
+#' 
+#' @param `show.graphs` booleano que indica si se mostrarán las gráficas de supuestos.
+#' 
+#' @returns un dataframe con una columna para pruebas y otra para pvalues.
+pruebas <- function(fit, show.graphs = T) {
+  result <- data.frame('', '')
+  colnames(result) <- c('Test realizado:', 'p-value obtenido:')
+  
+  if (show.graphs) {
+    par(mfrow = c(2,2), mgp = c(2,0.7,0), mar = c(3,3,1.5,1))
+    plot(fit, 1)   #linealidad
+    plot(fit, 3)   #homocedasticidad
+    plot(fit, 2)   #normalidad
+    plot(fit, 5, cook.levels = c(4/(dim(data)[1]-2), 0.5, 1.0))   #Outliers 
+  }
+  
+  #Homocedasticidad
+  #H0: la varianza es constante 
+  result[1,1] <- "car::ncvTest"
+  result[1,2] <- round(car::ncvTest(fit)$p, 5)
+  #Si se rechaza H0, hay evidencia en contra de la homocedasticidad
+  
+  #Normalidad 
+  #Se basa en los residuales estandarizados o estudentizados
+  #H0: los datos provienen de una distribución normal
+  library(broom)
+  data.aug=augment(fit)
+  result[2,1] <- "shapiro.test"
+  result[2,2] <- round(shapiro.test(data.aug$.std.resid)$p, 5)
+  result[3,1] <- "normtest::jb.norm.test"
+  result[3,2] <- round(normtest::jb.norm.test(data.aug$.std.resid)$p, 5)
+  #Si se rechaza H0, hay evidencia en contra de la normalidad
+  
+  #Linealidad
+  #H0: Agregar la variable al cuadrado tiene parámetro igual a 0
+  a <- car::residualPlots(fit, plot=F, tests=F)
+  n <- length(a[,2])
+  result[4,1] <- "car::residualPlots"
+  for (i in 1:n) {
+    result[4+i,1] <- names(a[,2][i])
+    result[4+i,2] <- round(as.double(a[,2][i]), 5)
+  }
+  #Si se rechaza H0 para alguna, quizás se podría agregar al cuadrado en el modelo.
+  return(result);
+}
+pruebas(fit) # No pasa ninguna prueba, no se cumplen los supuestos. Probemos otro modelo
+```
+
+Dadas únicamente las gráficas, podríamos querer decir que no hay ningún problema
+con los supuestos ya que no hay grandes anomalías ni en la varianza, ni en la linealidad,
+ni en la normalidad. Salvo por los outliers, y si observamos las pruebas de hipótesis
+relacionadas a los supuesto vemos que el modelo tiene un muy mal comportamiento ya que
+no pasa ninguna prueba. Es decir, estos outliers nos están causando grandes problemas.
+
+### Mejorando el Modelo
+
+Creamos un nuevo modelo en donde inicialmente sólo transformamos a la variable de
+interés, a bpdiast, ya que el modelo anterior no cumplía con el supuesto de homocedasticidad.
+Para esto usamos una transformación Box-Cox y el $\lambda$ arrojado fue $\frac{-1}{2}$.
+
+Este modelo con $bpdiast^{-1/2}$, además de tener sentido (pasó la prueba F de la
+tabla ANOVA) tuvo muchísimo mejores comportamientos como lo podemos ver a continuación
+en su respectiva tabla de pruebas de supuestos:
+
+```{r, echo=F, message=F}
+#ii)
+
+# Transformemos bpdiast ya que no hay varianza constante.
+#summary(car::powerTransform(fit)) #Lambda aprox -1/2
+
+fit <- lm(I(bpdiast^(-1/2)) ~ tcresult + age + sex, data)
+#summary(fit) # El modelo tiene sentido
+pruebas(fit, show.graphs = F) # Ya pasa las pruebas, pero residualPlots indica que hay que agregar a tcresult^2, hagamos boxTid
+```
+
+Sin embargo aún hay un pequeño detalle con la linealidad, y es que el test `residualPlots`
+nos indica que podríamos agregar a la variable $tcresult^2$.
+
+Este detalle nos llevó a también transformar tcresult. Para esto hicimos una transformación
+Box-Tidwell y el $\lambda$ sugerido fue de 9.
+
+Nuestro modelo definitivo fue este último indicado, con $bpdiast^{-1/2}$ y $tcresult^9$.
+A continuación podemos ver su tabla de pruebas de supuestos, donde apreciamos su
+buen comportamiento respecto a los supuestos:
+
+```{r, echo=F}
+#car::boxTidwell(I(bpdiast^(-1/2)) ~ tcresult + age, ~sex, data=data) # Conseguir potencia de transformación a tcresult, excluyendo a sex
+
+fit <- lm(I(bpdiast^(-1/2)) ~ I(tcresult^9) + age + sex, data)
+#summary(fit) # Tiene sentido
+pruebas(fit, show.graphs = F) # Pasa todas las pruebas
+
+#iii)
+#...
+```
+
+### Preguntas del Investigador
+
+Para responder a la pregunta
+
+"¿Se puede indicar que para una persona de cierta edad y sexo, tener un nivel de
+colesterol alto se asocia con una alta presión arterial diastólica?"
+
+debemos traducirla a nuesto modelo. Y dado a que nuestro modelo se ve de la manera
+
+$E[bpdiast^{-1/2}] = \beta_0 + \beta_1tcresult^2 + \beta_2age + \beta_3sex$
+
+y además la función $f(x) = x^{-1/2}$ es decreciente para valores positivos como
+lo es tcresult, contrastamos la hipótesis
+
+$E[bpdiast^{-1/2} |\ tcresult+1, age^*, sex^*] < E[bpdiast^{-1/2} |\ tcresult,age^*,sex^*]$\
+$\Leftrightarrow$\
+$\beta_0 + \beta_1(tcresult+1)^9 + \beta_2age^* + \beta_3sex^* < \beta_0 + \beta_1tcresult^9 + \beta_2age^* + \beta_3sex^*$\
+$\Leftrightarrow$\
+$\beta_1((tcresult + 1)^9 - tcresult^9) < 0$\
+$\Leftrightarrow$\
+$\beta_1 < 0$, pues $tcresult \geq 0$\
+$\therefore H_0: \beta_1 \geq 0\ vs.\ H_a: \beta_1 < 0$\
+ya que un incremento en $tcresult$ sería un decremento en $bpdiast^{-1/2}$ por la 
+transformación Box-Cox usada.
+
+Contrastamos la hipótesis necesaria para responder al investigador y el resultado
+obtenido fue que encontramos fuerte evidencia de que se cumple lo preguntado,
+que a mayor nivel de colesterol mayor presión arterial diastólica para un paciente
+con edad y sexo fijo.
+
+El p-value de la prueba fue de 0.0005 como se puede ver a continuación,
+evidencia muy fuerte a favor de la pregunta del investigador.
+
+```{r, echo=F, message=F}
+library(multcomp)
+K <- matrix(c(0, 1, 0, 0), ncol = 4, nrow = 1, byrow = T)
+m <- c(0)
+summary(glht(fit, linfct = K, rhs = m, alternative = 'less'))
+```
+
+### Graficando el Modelo
+
+```{r, echo=F, message=F}
+point.estimates <- function(x, age, woman) {
+  (coef(fit)[1] + coef(fit)[2]*x^9 + coef(fit)[3]*age + coef(fit)[4]*woman)^(-2)
+}
+
+library(ggplot2)
+colors1 <- c("#FD0100", "#F76915", "#EEDE04", "#A0D636", "#2fa236", "#333ED4")
+ggplot(data, aes(x=tcresult, y=bpdiast)) + 
+  geom_point() + 
+  scale_color_manual(values = c('Hombre' = 'blue', 'Mujer' = 'red')) +
+  labs(x = "tcresult",
+       y = "bpdiast") +
+  geom_function(fun = ~ point.estimates(.x, age = 30, woman = 0),
+                aes(color = colors1[4]), size=1) +
+  geom_function(fun = ~ point.estimates(.x, age = 50, woman = 0),
+                aes(color = colors1[5]), size=1) +
+  geom_function(fun = ~ point.estimates(.x, age = 64, woman = 0),
+                aes(color = colors1[6]), size=1) +
+  geom_function(fun = ~ point.estimates(.x, age = 30, woman = 1),
+                aes(color = colors1[1]), size=1) +
+  geom_function(fun = ~ point.estimates(.x, age = 50, woman = 1),
+                aes(color = colors1[2]), size=1) +
+  geom_function(fun = ~ point.estimates(.x, age = 64, woman = 1),
+                aes(color = colors1[3]), size=1) +
+  scale_color_identity(breaks = colors1,
+                          labels = c("Hombre 30", "Hombre 50","Hombre 64",
+                                     "Mujer 30","Mujer 50", "Mujer 64" ),
+                          guide = "legend", name = "Estimaciones")+
+  theme_minimal()
+```
+
+La grafica presentada nos muestra 6 curvas ajustadas según nuestro modelo, dejando
+diferentes edades y sexos fijos y muestra cómo cambia la presión arterial diastólica
+en los pacientes conforme los niveles de colesterol van aumentando para pacientes
+de dicha edad y dicho sexo indicado.
+
+Podemos observar que aproximadamente con un puntaje del tcresult mayor a 275 el 
+cambio en la presión arterial empieza a crecer exponencialmente. Antes de esta cota
+no hay prácticamente influencia en las variables, casi es sólo el parámetro del 
+intercepto (haciendo las transformaciones correspondientes es aproximadamente
+$\beta_0^{-2} \approx 69$).
+
+Una última observación es que este efecto de mayor presión arterial cuando se tienen
+altos niveles de colesterol afecta en general más a las mujeres, ya que las líneas
+azul y verde oscuro están por encima de todas las demás, siendo las correspondientes
+a mujeres con 64 y 50 años de edad respectivamente, mientras que las mujeres de 
+30 años sufren de este efecto prácticamente con la misma intensidad que los hombres
+de 50 años.   
+
+## Ejercicio 2
+
+```{r, include=F}
+data <- read.csv('Datos/Preg1A.csv')
+data$sex <- factor(data$sex, labels = c('Hombre', 'Mujer'))
+```
+
+El modelo que presentamos es uno gaussiano inverso usando la liga identidad y tomando
+a la variable tcresult pero elevada al cubo.
+
+```{r, include=F}
+fit <- glm(bpdiast ~ I(tcresult^3) + age + sex,
+           family = inverse.gaussian(link = 'identity'), data = data)
+```
+
+Dado a que la liga es la identidad, la expresión matemática para modelar la esperanza
+de los valores de presión arterial esuna muy sencilla de interpretar (sólo debemos
+asumir que las observaciones provienen de una distribución inversa gaussiana, como
+su nombre lo indica). Dicha expresión es la siguiente:
+
+$$E[bpdiast| tcresult, age, sex] = \beta_0 + \beta_1tcresult^3 + \beta_2age + \beta_3sex$$
+Donde sex=1 cuando el paciente es mujer, 0 en el caso de los hombres.
+
+El procedimiento para obtener este modelo fue tomar una malla de polinomios y potencias
+para tcresult, pues en el Ejercicio 1 habíamos visto que esta variable era la que
+causaba problemas en la linealidad de los supuestos (además de que nos interesa
+modelar el cambio de la presión arterial respecto al cambio en los niveles de
+colesterol). Después de tomar esta malla tomamos todas las posibles combinaciones
+entre las distribuciones Gaussiana, Gamma, Inversa Gaussiana, y las diferentes ligas
+útiles para estas distribuciones: identidad, logarítmica, inversa e inversa cuadrática.
+
+Después ordenamos toda esta malla de modelos por su AIC y BIC. A continuación les
+mostramos algunos de los mejores modelos calificados por su AIC y BIC:
+
+
+```{r, echo=F}
+#Inciso i)
+#Componente lineal: 
+# i) Transformaciones Box Tidwell (potencias) a x
+# ii) Polinomio sobre x 
+malla=seq(from = 1, to = 3, by = 1)
+Poli <- cbind("poly", malla)
+
+malla=seq(from = -3, to = 3, by = .5)
+Pot <- cbind("pot", malla)
+
+CompLin=rbind(Poli, Pot)
+
+#Componente aleatorio:
+# i) Distribuci?n Normal
+# ii) Distribuci?n Gamma
+# iii) Distribuci?n Inversa Gaussiana
+Distribuciones=c("gaussian", "Gamma", "inverse.gaussian")
+
+#Funci?n liga
+# i) inverse
+# ii) identity
+# iii) log
+# iv) 1/mu^2 (s?lo IG)
+
+FunLigas=c("identity", "log", "inverse", "1/mu^2")
+
+
+nFunLigas=length(FunLigas)
+nDist=length(Distribuciones)
+nCompLin=dim(CompLin)[1]
+
+
+ModelList=list(NA)
+AICList=list(NA)
+BICList=list(NA)
+FormList=list(NA)
+#Total modelos 18*2*3+18*4
+index=0
+for(k in 1:nCompLin){
+  if(CompLin[k,1]=="poly"){
+    formstring=paste0("bpdiast ~ poly(tcresult,",  CompLin[k,2], ", raw=TRUE) + age + sex")
+  }else{
+    if(CompLin[k,2]==0){
+      formstring=paste0("bpdiast ~ I(log(tcresult)) + age + sex")}else
+      {
+        formstring=paste0("bpdiast ~ I(tcresult^(",  CompLin[k,2], ")) + age + sex")}
+  }
+  form <- as.formula(formstring)
+  for(j in 1:nDist){
+    for(l in 1:nFunLigas){
+      if(FunLigas[l]=="1/mu^2"){
+        if(Distribuciones[j]=="inverse.gaussian"){
+          index=index+1
+          Dist=get(Distribuciones[j])
+          Mod.A.Prueba=glm(form, data=data, family = Dist(link=FunLigas[l]))
+          ModelList[[index]]=Mod.A.Prueba
+          AICList[[index]]=AIC(Mod.A.Prueba)
+          BICList[[index]]=BIC(Mod.A.Prueba)
+          FormList[[index]]=formstring
+        }
+      }else{
+        index=index+1
+        Dist=get(Distribuciones[j])
+        Mod.A.Prueba=glm(form, data=data, family = Dist(link=FunLigas[l]))
+        ModelList[[index]]=Mod.A.Prueba
+        AICList[[index]]=AIC(Mod.A.Prueba)
+        BICList[[index]]=BIC(Mod.A.Prueba)
+        FormList[[index]]=formstring
+      }
+    }
+  }
+}
+
+#Ordenando los modelos modelos
+AICs=unlist(AICList)
+DatAICs=cbind(Index=1:length(AICs), AICs)
+DatAICs=DatAICs[order(AICs),]
+
+BICs=unlist(BICList)
+DatBICs=cbind(Index=1:length(BICs), BICs)
+DatBICs=DatBICs[order(BICs),]
+
+AICBICs <- cbind(DatAICs, DatBICs)
+
+#Algunos de los mejores
+head(AICBICs)
+
+
+index1ro = DatAICs[1,1]
+index2do = DatAICs[2,1]
+index3ro = DatAICs[4,1]
+Mod1=ModelList[[index1ro]]
+Mod2=ModelList[[index2do]]
+Mod3=ModelList[[index3ro]]
+
+"Modelo con Index=157:"
+Mod1$family
+FormList[[index1ro]]
+
+"Modelo con Index=158:"
+Mod2$family
+FormList[[index2do]]
+
+"Modelo con Index=147:"
+Mod3$family
+FormList[[index3ro]]
+```
+
+También notamos que al seguir aumentando la potencia a la que elevamos tcresult
+nos mejora un poco el AIC, pero para no perder interpretación optamos por dejar
+la potencia igual a 3.
+
+A este modelo le hicimos un análisis de supuestos. No presentó prácticamente ningún
+problema por lo que lo tomamos como nuestra mejor opción.
+
+```{r, include=F}
+library(ggplot2)
+library(ggResidpanel)
+resid_panel(fit, plots=c("all"))
+car::residualPlots(fit) #Linealidad
+#No hay necesidad de agregar a tcresult^2 ni age^2
+summary(glm(bpdiast ~ tcresult + I(tcresult*log(tcresult)) + age + sex,
+            family = inverse.gaussian('identity'), data)) #No hay necesidad de transformar a tcresult pues p-value = 0.059
+#No hay evidencia en contra de linealidad 
+
+fitqr <- statmod::qresid(fit) #Normalidad
+nortest::lillie.test(fitqr)
+shapiro.test(fitqr)
+#No hay evidencia en contra de normalidad
+```
+
+Mostramos la gráfica de residuales simulados como resumen de que cumple con los
+supuestos:
+
+```{r, echo=F}
+set.seed(1)
+fitres <- DHARMa::simulateResiduals(fittedModel = fit)
+plot(fitres)
+
+#Inciso ii)
+#...
+```
+
+*Toleramos
+
+### Preguntas del Investigador
+
+Ahora queremos saber si a mayores niveles de colesterol mayores niveles de presión
+arterial diastólica. Como nuestro modelo es sencillo de interpretar, la prueba es más
+directa. En ecuaciones se ve así:
+
+$E[bpdiast| tcresult+1, age^*, sex^*] > E[bpdiast| tcresult, age^*, sex^*]$\
+$\Leftrightarrow$\
+$\beta_0 + \beta_1(tcresult+1)^3 + \beta_2age + \beta_3sex > \beta_0 + \beta_1tcresult^3 + \beta_2age + \beta_3sex$\
+$\Leftrightarrow$\
+$\beta_1((tcresult+1)^3 - tcresult^3) > 0$\
+$\Leftrightarrow$\
+$\beta_1 > 0$, pues $tcresult \geq 0$
+Por lo tanto contrastamos $H_0: \beta_1 \leq 0$
+
+```{r, echo=F}
+K <- matrix(c(0, 1, 0, 0), ncol = 4, nrow = 1, byrow = T)
+m <- c(0)
+summary(multcomp::glht(fit, linfct = K, rhs = m, alternative = 'greater')) #Se cumple lo del investigador
+
+b1 <- coef(fit)[2]
+```
+
+Como el p-value = 0.001, rechazamos $H_0$ y concluimos lo que el investigador sospechaba,
+que a mayor colesterol mayor presión arterial.
+
+### Graficando el Modelo
+
+Haremos las mismas gráficas que en el Ejercicio 1. Para tres edades específicas y sus
+combinaciones con los dos sexos.
+
+```{r, echo=F, message=F}
+point.estimates <- function(x, age, woman) {
+  coef(fit)[1] + coef(fit)[2]*x^3 + coef(fit)[3]*age + coef(fit)[4]*woman
+}
+library(ggplot2)
+colors1 <- c("#FD0100", "#F76915", "#EEDE04", "#A0D636", "#2fa236", "#333ED4")
+ggplot(data, aes(x=tcresult, y=bpdiast)) + 
+  geom_point() + 
+  scale_color_manual(values = c('Hombre' = 'blue', 'Mujer' = 'red')) +
+  labs(x = "tcresult",
+       y = "bpdiast") +
+  geom_function(fun = ~ point.estimates(.x, age = 30, woman = 0),
+                aes(color = colors1[4]), size=1) +
+  geom_function(fun = ~ point.estimates(.x, age = 50, woman = 0),
+                aes(color = colors1[5]), size=1) +
+  geom_function(fun = ~ point.estimates(.x, age = 64, woman = 0),
+                aes(color = colors1[6]), size=1) +
+  geom_function(fun = ~ point.estimates(.x, age = 30, woman = 1),
+                aes(color = colors1[1]), size=1) +
+  geom_function(fun = ~ point.estimates(.x, age = 50, woman = 1),
+                aes(color = colors1[2]), size=1) +
+  geom_function(fun = ~ point.estimates(.x, age = 64, woman = 1),
+                aes(color = colors1[3]), size=1) +
+  scale_color_identity(breaks = colors1,
+                          labels = c("Hombre 30", "Hombre 50","Hombre 64",
+                                     "Mujer 30","Mujer 50", "Mujer 64" ),
+                          guide = "legend", name = "Estimaciones")+
+  theme_minimal()
+```
+
+Las interpretaciones de esta gráfica son prácticamente a las de el Ejercicio 1, 
+pues la principal diferencia en estas es que la del modelo de regresión lineal
+múltiple tiene un crecimiento más exponencial cuando estamos en valores de colesterol
+mayores a 275, y ese modelo con la suposición de que las observaciones provienen
+de una inversa gaussiana, es más lineal el crecimiento. Se penaliza menos el tener
+altos niveles de colesterol.
+
+### Elección de un Modelo Definitivo
+
+Optamos por elegir un modelo según lo que se necesite explicar Por ejemplo,
+si queremos hacer predicciones, o tener mayor precisión en la estimación, nos quedamos
+con el modelo de regresión lineal múltiple pues parece que su crecimiento exponencial
+con valores altos de colesterol es más acertado que el de la suposición de que las
+observaciones provienen de una inversa gaussiana. El problema con éste, es que la
+interpretación es muy complicada por las transformaciones hechas a la variable bpdiast.
+
+Mientras que para fines didácticos o explicativos con valores más exactos de cómo cambia
+la presión arterial diastólica con respecto a los niveles de colesterol en sangre, nos
+quedamos con el modelo lineal generalizado, pues al ser una interpretación directa
+sobre la variable bpdiast, esto nos facilita el entender cómo afecta el cambiar una variable
+respecto a la otra.
+
+Además, por último, contrastamos los AIC de estos dos modelos, siendo nuevamente
+el de la regresión lineal múltiple el mejor calificado (se tuvo que hacer un ajuste
+a su AIC por la transformación que se hizo a bpdiast). Mostramos la transformación
+de AIC y los AIC correspondientes a los dos modelos a continuación:
+
+$$L(\theta | \underline{y}) = \prod_{i=1}^{200}\ f(y_i) = $$\
+$$\Pi_{i=1}^{200}\ f_Z(z_i) \prod_{i=1}^{200}\ \frac{d}{dy}z_i =$$\
+$$L(\theta|\underline{z}) \prod_{i=1}^{200}\ \frac{-1}{2y^{3/2}} =$$\
+$$L(\theta|\underline{z}) \prod_{i=1}^{200}\ \frac{1}{2y^{3/2}}$$
+
+Por lo tanto, llevándolo a forma de AIC
+
+$$AIC = AIC_{(y^{-1/2})} + 2\sum_{i=1}^{200}ln(2y^{3/2})$$
+
+```{r, echo=F}
+fit.lm <- lm(I(bpdiast^(-1/2)) ~ I(tcresult^9) + age + sex, data)
+
+AIC.lm <- AIC(fit.lm) + 2*sum(log(data$bpdiast^(3/2)*2))
+c("AICes")
+c("RLM:", AIC.lm)
+c("InversaG:", AIC(fit))
+```
+
 ## Ejercicio 4
 ```{r, include=F}
 data <- read.csv("Datos/Preg4.csv")
@@ -140,11 +641,11 @@ ci.upr <- confint[,3]
 ggplot(data=data,
        aes(x=Age, y=Cases/Pop, colour=City)) +
   geom_point() +
-  geom_segment(aes(x=1, y=ci.lwr[1], xend=1, yend=ci.upr[1]), linetype=2, color='black') +
-  geom_segment(aes(x=2, y=ci.lwr[2], xend=2, yend=ci.upr[2]), linetype=2, color='black') +
-  geom_segment(aes(x=3, y=ci.lwr[3], xend=3, yend=ci.upr[3]), linetype=2, color='black') +
-  geom_segment(aes(x=4, y=ci.lwr[4], xend=4, yend=ci.upr[4]), linetype=2, color='black') +
-  geom_segment(aes(x=5, y=ci.lwr[5], xend=5, yend=ci.upr[5]), linetype=2, color='black') +
+  geom_segment(aes(x=1, y=ci.lwr[1], xend=1, yend=ci.upr[1]), linetype=2, color='#404040') +
+  geom_segment(aes(x=2, y=ci.lwr[2], xend=2, yend=ci.upr[2]), linetype=2, color='#404040') +
+  geom_segment(aes(x=3, y=ci.lwr[3], xend=3, yend=ci.upr[3]), linetype=2, color='#404040') +
+  geom_segment(aes(x=4, y=ci.lwr[4], xend=4, yend=ci.upr[4]), linetype=2, color='#404040') +
+  geom_segment(aes(x=5, y=ci.lwr[5], xend=5, yend=ci.upr[5]), linetype=2, color='#404040') +
   theme_classic()
 ```
 
@@ -300,12 +801,12 @@ Para los niveles ordinales: Low=L, Medium=M, High=H
 
 Además los datos son presentados en el formato "Vivienda.Influencia.Contacto".
 Por ejemplo la etiqueta To.M.L nos indica que hablamos de los inquilinos con vivienda
-tipo Tower, que perciben su influencia del mantenimiento de la vivienda como Medium,
+tipo Tower, que perciben su influencia en el mantenimiento de la vivienda como Medium,
 y que su contacto con el resto de inquilinos es Low.
 
-```{r, echo=F}
+```{r, echo=F, results='hide', message=F}
 data <- read.csv("Datos/Preg5.csv")
-
+data$Sat <- factor(data$Sat, ordered = T)
 #i)
 library(lessR)
 data$Type.Infl.Cont <- factor(paste(substr(data$Type, 1, 2),           #Tower=To, Atrium=At, ...
@@ -325,12 +826,17 @@ siempre es mayor al 50%, esto hace sentido ya que sentir que su opinión importa
 y tener buena comunicación con los demás puede influir en sentirse cómodos en su vivienda.
 
 Por otro lado, cuando se consideran con influencia Low y comunicación Low, salvo por
-los inquilinos que viven en Tower, tienen un índice del 40% en sentirse poco satisfechos.
+los inquilinos que viven en Tower, tienen un índice menor al 40% en sentirse poco satisfechos.
 
 Otro dato a notar, es que en general los individuos que viven en Tower tienden a ser
 los que se sienten más satisfechos, seguidos por los que viven en Apartment.
 
-```{r}
+### Ajuste de Modelo Multinomial
+
+Ajustamos dos modelos multinomiales, uno donde consideramos todas las interacciones
+entre todas las variables y uno sin interacciones.
+
+```{r, include=F}
 #ii)
 library(VGAM)
 
@@ -345,13 +851,33 @@ fit.complete <- vglm(Sat ~ Type*Infl*Cont,
 fit <- vglm(Sat ~ Type + Infl + Cont,
             family=multinomial(refLevel='Low'),
             data)
+```
+
+De estos dos modelos nos quedamos con el que no tiene interacciones, ya que hicimos
+una prueba de ajuste y no encontramos evidencia para descartar al modelo reducido.
+
+Además de que tiene menores AIC y BIC este último modelo sin interacciones. A
+continuación mostramos la prueba realizada así como los AIC y BIC de ambos modelos.
+
+```{r, echo=F}
 #anova(fit1, fit2, test='LRT', type='I')
 lrtest(fit.complete, fit) # pvalue > 0.05, no hay evidencia para descartar el reducido
+c('Completo', 'Reducido')
+"AIC:"
 c(AIC(fit.complete), AIC(fit))
+"BIC:"
 c(BIC(fit.complete), BIC(fit))
 ```
 
-```{r}
+Por estos motivos, consideramos como un mejor modelo el reducido, ya que tenemos
+menos parámetros y mejores criterios AIC y BIC.
+
+### Modelos Logísticos Acumulativos
+
+También consideramos dos modelos logísticos acumulativos. Uno con el supuesto de curvas
+paralelas de probabilidad acumulada y otro sin este supuesto.
+
+```{r, include=F}
 #iii)
 
 fit.p <- vglm(Sat ~ Type + Infl + Cont,
@@ -360,22 +886,57 @@ fit.p <- vglm(Sat ~ Type + Infl + Cont,
 fit.nop <- vglm(Sat ~ Type + Infl + Cont,
                 family=cumulative(parallel=F),
                 data)
+```
+
+De estos dos modelos optamos por el modelo con el supuesto de curvas paralelas de
+probabilidad acumuladad. Para tomar esta decisión hicimos una prueba de ajuste y obtuvimos
+un p-value mayor al 0.05, por lo que no encontramos evidencia para no descartar al 
+modelo con más parámetros.
+
+Encima de esto, este modelo con el supuesto de curvas paralelas tiene menores AIC
+y BIC. Mostramos la prueba de ajuste, así como los AIC y BIC de ambos modelos a 
+continuación.
+
+```{r, echo=F}
 lrtest(fit.p, fit.nop) # pvalue > 0.05, no hay evidencia en contra de descartar el completo,
                        # es decir podemos quedarnos con el supuesto de probas proporcionales.
+c('No-Paralelas', 'Paralelas')
+'AIC:'
 c(AIC(fit.nop), AIC(fit.p))
+'BIC:'
 c(BIC(fit.nop), BIC(fit.p))
 ```
 
-```{r}
-#iv)
-c(AIC(fit.p), AIC(fit))
-c(BIC(fit.p), BIC(fit))
+### Elección Final de Modelo
 
+Después de tomar en consideración todos estos modelos, optamos por el modelo logístico
+acumulativo con el supuesto de curvas paralelas, ya que encima de ser mejor en interpretación
+al que no tenía este supuesto, también resultó mejor al multinomial bajo los criterios
+del AIC y BIC. Lo mostramos a continuación:
+
+```{r, echo=F}
+#iv)
+c('Paralelos', 'Mult. Reducido')
+'AIC:'
+c(AIC(fit.p), AIC(fit))
+'BIC:'
+c(BIC(fit.p), BIC(fit))
+```
+
+### Interpretación Usando el Modelo Final
+
+Usando este modelo final elegido, interpretamos las probabilidaes arrojadas por el
+modelo de caer en cada nivel de satisfacción dependiendo de cada uno de las 24 posibles
+combinaciones de categorías (4 del tipo de vivienda, 3 del nivel de influencia en las
+decisiones del mantenimiento, 2 en la comunicación con otros inquilinos. $4\times 3\times 2 = 24$)
+
+Mostramos a continuación una serie de gráficas, cada una dependiendo el nivel de influencia
+autopercibida en las decisiones del mantenimiento de los inquilinos
+
+```{r, echo=F, results='hide', message=F}
 library(dplyr)
 combinations <- unique(data[,3:5]) %>% arrange(Infl, Cont, Type)
 odds <- predict(fit.p, combinations, type='response')
-odds
-combinations
 infl.low <- odds[1:8,]
 infl.med <- odds[9:16,]
 infl.high <- odds[17:24,]
@@ -401,6 +962,31 @@ legend('topleft', legend = rownames(infl.high),
        bty = 'n', fill = colors)
 ```
 
+Por simplicidad interpretemos lo arrojado por el modelo para la variable Infl.
+Dejemos fijo que la vivienda del inquilino sea Tower y que el nivel de contacto
+con los demás inquilinos sea Low. Es decir, fijémonos en las barras de color negro
+de las tres gráficas.
+
+Para el caso en el que autoperciban su influencia en las decisiones del mantenimiento
+como Low, las probablidades (aproximadas) arrojadas por el modelo son las siguientes:\
+Sentirse Low satisfecho, 38%\
+Sentirse Medium satisfecho, 29%\
+Sentirse High satisfecho, 33%\
+
+Para el caso cuando autoperciben su nivel de influencia como Medium, las probabilidades
+aproximadas son:\
+Sentirse Low satisfecho, 25%\
+Sentirse Medium satisfecho, 27%\
+Sentirse High satisfecho, 48%\
+
+Para el caso cuando autoperciben su nivel de influencia como High, las probabilidades
+aproximadas son:\
+Sentirse Low satisfecho, 15%\
+Sentirse Medium satisfecho, 20%\
+Sentirse High satisfecho, 65%\
+
+Podemos repetir esta interpretación de las gráficas para cada combinación del tipo
+"Type.Infl.Cont".
 
 
 

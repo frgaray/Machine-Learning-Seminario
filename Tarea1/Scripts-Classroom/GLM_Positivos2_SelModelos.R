@@ -1,4 +1,4 @@
-#Comparación y Selección de Modelos
+#Comparaci?n y Selecci?n de Modelos
 #Un enfoque de aprendizaje automatizado
 #Ejemplo para modelar las ventas a partir de la publicidad en TV
 
@@ -20,7 +20,7 @@ glm1=glm(sales~TV, data=Datos, family = Gamma(link="inverse"))
 
 
 #Ahora buscaremos entre un conjunto de posibles glm
-#Varios aspectos que podríamos considerar
+#Varios aspectos que podr?amos considerar
 
 #Componente lineal: 
 # i) Transformaciones Box Tidwell (potencias) a x
@@ -45,17 +45,17 @@ Pot <- cbind("pot", malla)
 CompLin=rbind(Poli, Pot)
 
 #Componente aleatorio:
-# i) Distribución Normal
-# ii) Distribución Gamma
-# iii) Distribución Inversa Gaussiana
+# i) Distribuci?n Normal
+# ii) Distribuci?n Gamma
+# iii) Distribuci?n Inversa Gaussiana
 help("family")
 Distribuciones=c("gaussian", "Gamma", "inverse.gaussian")
 
-#Función liga
+#Funci?n liga
 # i) inverse
 # ii) identity
 # iii) log
-# iv) 1/mu^2 (sólo IG)
+# iv) 1/mu^2 (s?lo IG)
 
 FunLigas=c("identity", "log", "inverse", "1/mu^2")
 
@@ -106,7 +106,7 @@ for(k in 1:nCompLin){
   }
 }
 
-#Índice del modelo con menor AIC
+#?ndice del modelo con menor AIC
 
 MinAIC=which.min(unlist(AICList))
 ModMinAIC=ModelList[[MinAIC]]
@@ -118,7 +118,7 @@ BICList[[MinAIC]]
 FormList[[MinAIC]]
 
 
-#Índice del modelo con menor BIC
+#?ndice del modelo con menor BIC
 
 MinBIC=which.min(unlist(BICList))
 ModMinBIC=ModelList[[MinBIC]]
@@ -145,7 +145,7 @@ BICList[[DatAICs[2,1]]]
 FormList[[DatAICs[2,1]]]
 
 
-### Comparación con un modelos de regresión lineal normal
+### Comparaci?n con un modelos de regresi?n lineal normal
 ###Buscamos posibles transformaciones
 ###Es necesario transformar a $y$ pues la varianza no es constante
 library(car)
@@ -154,25 +154,25 @@ fitlm1=lm(sales~TV, data=Datos)
 summary(fitlm1)
 summary(powerTransform(fitlm1)) #Transformaciones BoxCox
 
-#Por facilidad se considera sólo la potencia de la transformación BoxCox
-#Se busca ahora una posible transformación Boxtidwell para TV
+#Por facilidad se considera s?lo la potencia de la transformaci?n BoxCox
+#Se busca ahora una posible transformaci?n Boxtidwell para TV
 boxTidwell(I(sales^(1/2))~TV, data=Datos)
 
 fitlm2=lm(I(sales^(1/2))~I(TV^(1/3)), data=Datos)
 summary(fitlm2)
 
 #Notar que el AIC de este modelo no es comparable con los AIC
-#de los otros modelos, pues éste se calcula en la escala raíz cuadrada
+#de los otros modelos, pues ?ste se calcula en la escala ra?z cuadrada
 AIC(fitlm2)
 
-#Vamos a calcular de forma correcta éste
+#Vamos a calcular de forma correcta ?ste
 AIC(fitlm2)-2*(-sum(log(2*sqrt(Datos$sales))))
 #a mano
 loglikY=sum( log(dnorm(sqrt(Datos$sales), fitlm2$fitted.values, sigma(fitlm2) )*(1/(2*sqrt(Datos$sales)))  ) )
 (AICY=-2*(loglikY)+2*(2+1))
 
 #Los datos que se grafican para este modelo en la escala original
-#no corresponden a la media, pero sí a la mediana
+#no corresponden a la media, pero s? a la mediana
 datoseval=data.frame(TV=seq(0, 300, by=.2))
 datfitlm2= data.frame(TV=datoseval$TV, sales=predict(fitlm2, newdata=datoseval)^2 )
 
