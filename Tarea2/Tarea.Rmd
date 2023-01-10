@@ -1,0 +1,1600 @@
+---
+title: "Exámen 2"
+output:
+  pdf_document: default
+  html_document: default
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,echo=FALSE, warning=FALSE}
+library(ggplot2)
+
+```
+
+## Pregunta 1
+
+```{r,include=FALSE, warning=FALSE}
+
+library(faraway)
+library(bestglm)
+library(MASS)
+library(smurf)
+
+help("fat")
+datos1 = fat
+str(datos1)
+summary(datos1)
+
+```
+
+Antes de comenzar con el ejercicio, debemos realizar un preprocesamiento
+de los datos,es decir, eliminaremos algunas variables que no
+participarán en el análisis y también, eliminaremos algunos valores
+nulos y extraños de algunas columnas.
+
+```{r, include=FALSE, warning=FALSE}
+
+# Preprocesamiento
+
+Datos1 <- with(datos1, {
+  data.frame(brozek, age,weight,height,adipos,neck,chest,abdom,hip,thigh,
+             knee,ankle,biceps,forearm,wrist)
+})
+Datos1 <- Datos1[!is.na(Datos1$brozek),]
+Datos1 <- Datos1[!is.na(Datos1$weight),]
+Datos1 <- Datos1[!is.na(Datos1$height),]
+
+```
+
+Una vez realizado esa pequeña adecuación, ya podemos comenzar a realizar
+los distintos análisis de este ejercicio.
+
+### I) Selección de variables considerando sólo los efectos principales de las variables
+
+Considerando un modelo para datos continuos con liga identidad y
+distribución Gaussiana, pocedemos a realizar la selección de variables
+utilizando los siguientes métodos y registrando el BIC del modelo
+resultante.
+
+#### a) Mejor subconjunto
+
+Comenzaremos con el metodo de encontrar el mejor subconjunto.
+
+```{r, include=FALSE, warning=FALSE}
+
+Datos1xy=Datos1[,c(2:15,1)]
+
+best.identity <- bestglm(Datos1xy,
+                      IC = "BIC",                 
+                      family=gaussian("identity"),
+                      method = "exhaustive")
+summary(best.identity$BestModel)
+
+
+```
+
+El BIC obtenido fue de:
+
+```{r, echo=FALSE, warning=FALSE}
+
+BIC(best.identity$BestModel)
+
+```
+
+#### b) Un método stepwise
+
+```{r, include=FALSE, warning=FALSE}
+
+#Modelo
+
+Datos1.glm <- glm(brozek ~ ., family = gaussian(link = "identity"), data = Datos1)
+summary(Datos1.glm)
+
+#Pasos
+
+Datos1.step <- stepAIC(Datos1.glm, trace = FALSE,k=log(dim(Datos1)[1])) 
+
+summary(Datos1.step)
+AIC(Datos1.step)
+
+# La salida es un objeto similar al glm
+Datos1.step$formula
+
+# se pueden verificar los supuestos directamente
+library(DHARMa)
+set.seed(123)
+Datos1.stepres <- simulateResiduals(fittedModel = Datos1.step)
+
+
+```
+
+El BIC obtenido fue de:
+
+```{r, echo=FALSE, warning=FALSE}
+
+BIC(Datos1.step)
+
+```
+
+#### c) Método lasso.
+
+```{r, include=FALSE, warning=FALSE}
+
+
+formu <- brozek ~ p(age, pen = "lasso") + p(weight, pen = "lasso")+
+              p(height, pen = "lasso") + p(adipos, pen = "lasso")+
+              p(neck, pen = "lasso") + p(chest, pen = "lasso") +
+              p(abdom, pen = "lasso") + p(hip, pen = "lasso") +
+			  p(thigh, pen = "lasso") + p(knee, pen = "lasso") +
+			  p(ankle, pen = "lasso") + p(biceps, pen = "lasso") +
+			  p(forearm, pen = "lasso") + p(wrist, pen = "lasso") 
+
+Datos1.fit <- glmsmurf(formula = formu, gaussian(link = "identity"), data = Datos1, 
+                        pen.weights = "glm.stand", lambda = "is.bic", control=list(lambda.length=200, reest = TRUE, lambda.reest=TRUE))
+
+plot_lambda(Datos1.fit)
+Datos1.fit$lambda
+log(Datos1.fit$lambda)
+
+summary(Datos1.fit)
+
+
+```
+
+El BIC obtenido fue de:
+
+```{r, echo=FALSE, warning=FALSE}
+
+BIC(Datos1.fit)
+
+```
+
+### II) Selección de variables considerando en el modelo los efectos principales de las variables, así como su interacción
+
+En esta sección, realizaremos algo casi análogo al inciso anterior, solo
+que en esta ocasión, si se van a considerar las diversas interacciones
+de las covariables, asi podremos ver si hay una mejoria o todo lo
+contrario.
+
+#### a) Un método stepwise
+
+```{r, include=FALSE, warning=FALSE}
+
+#Modelo
+
+Datos1.glm <- glm(brozek ~ (.)^2, family = gaussian(link = "identity"), data = Datos1)
+summary(Datos1.glm)
+
+#Pasos
+
+Datos1.step <- stepAIC(Datos1.glm, trace = FALSE) 
+summary(Datos1.step)
+AIC(Datos1.step)
+
+# La salida es un objeto similar al glm
+Datos1.step$formula
+
+# se pueden verificar los supuestos directamente
+library(DHARMa)
+set.seed(123)
+Datos1.stepres <- simulateResiduals(fittedModel = Datos1.step)
+X11()
+plot(Datos1.stepres)
+summary(Datos1.step)
+
+
+```
+
+El BIC obtenido fue de:
+
+```{r, echo=FALSE, warning=FALSE}
+
+BIC(Datos1.step)
+
+```
+
+#### b) Método lasso.
+
+```{r, include=FALSE, warning=FALSE,eval=FALSE}
+
+
+formu <- brozek ~ 
+			  p(age, pen = "lasso") * p(weight, pen = "lasso")*
+              p(height, pen = "lasso") * p(adipos, pen = "lasso")*
+              p(neck, pen = "lasso") * p(chest, pen = "lasso") *
+              p(abdom, pen = "lasso") * p(hip, pen = "lasso") *
+			  p(thigh, pen = "lasso") * p(knee, pen = "lasso") *
+			  p(ankle, pen = "lasso") * p(biceps, pen = "lasso") *
+			  p(forearm, pen = "lasso") * p(wrist, pen = "lasso")
+
+Datos1.fit <- glmsmurf(formula = formu, gaussian(link = "identity"), data = Datos1, 
+                        pen.weights = "glm.stand", lambda = "is.bic", control=list(lambda.length=100, reest = TRUE, lambda.reest=TRUE))
+
+plot_lambda(Datos1.fit)
+Datos1.fit$lambda
+log(Datos1.fit$lambda)
+
+summary(Datos1.fit)
+
+
+
+```
+
+El BIC no pudo ser obtenido debido a que la gran cantidad de variables no permitió que se llevara el cálculo, por ello se marca como"SC" (sin computar).
+
+```{r, echo=FALSE, warning=FALSE,eval=FALSE}
+
+BIC(Datos1.fit)
+
+```
+
+### III) Modificaciones para I) y II) <br>
+
+#### a.1)Gamma con liga identidad <br>
+Considerando un modelo para datos continuos con liga identidad y
+distribución Gamma, pocedemos a realizar la selección de variables
+utilizando los siguientes métodos y registrando el BIC del modelo
+resultante. 
+
+##### a.1.I) Selección de variables considerando sólo los efectos principales de las variables <br>
+
+###### a.1.I.1)Mejor subconjunto <br>
+
+Comenzaremos con el metodo de encontrar el mejor subconjunto.
+
+```{r, include=FALSE, warning=FALSE,eval = FALSE}
+
+Datos1xy=Datos1[,c(2:15,1)]
+
+best.identity <- bestglm(Datos1xy,
+                      IC = "BIC",                 
+                      family=Gamma("identity"),
+                      method = "exhaustive")
+summary(best.identity$BestModel)
+
+
+```
+
+El BIC no pudo ser obtenido, debido a que al ingresar los datos a la función, esta detecta la presencia de valores negativos al intentar procesarlos, lo cual no va acorde a una distribución gamma.
+
+
+###### a.1.I.2) Un método stepwise <br>
+
+```{r, include=FALSE, warning=FALSE, eval=FALSE}
+
+#Modelo
+
+Datos1.glm <- glm(brozek ~ ., family = Gamma(link = "identity"), data = Datos1)
+summary(Datos1.glm)
+
+#Pasos
+
+Datos1.step <- stepAIC(Datos1.glm, trace = FALSE,k=log(dim(Datos1)[1])) 
+
+summary(Datos1.step)
+AIC(Datos1.step)
+
+# La salida es un objeto similar al glm
+Datos1.step$formula
+
+# se pueden verificar los supuestos directamente
+library(DHARMa)
+set.seed(123)
+Datos1.stepres <- simulateResiduals(fittedModel = Datos1.step)
+
+
+```
+
+El BIC no pudo ser obtenido, debido a que al ingresar los datos a la función, esta detecta la presencia de valores negativos al intentar procesarlos, lo cual no va acorde a una distribución gamma.
+
+###### a.1.I.3) Método lasso. <br>
+
+```{r, include=FALSE, warning=FALSE, eval=FALSE}
+
+
+formu <- brozek ~ p(age, pen = "lasso") + p(weight, pen = "lasso")+
+              p(height, pen = "lasso") + p(adipos, pen = "lasso")+
+              p(neck, pen = "lasso") + p(chest, pen = "lasso") +
+              p(abdom, pen = "lasso") + p(hip, pen = "lasso") +
+			  p(thigh, pen = "lasso") + p(knee, pen = "lasso") +
+			  p(ankle, pen = "lasso") + p(biceps, pen = "lasso") +
+			  p(forearm, pen = "lasso") + p(wrist, pen = "lasso") 
+
+Datos1.fit <- glmsmurf(formula = formu, Gamma(link = "identity"), data = Datos1, 
+                        pen.weights = "glm.stand", lambda = "is.bic", control=list(lambda.length=200, reest = TRUE, lambda.reest=TRUE))
+
+plot_lambda(Datos1.fit)
+Datos1.fit$lambda
+log(Datos1.fit$lambda)
+
+summary(Datos1.fit)
+
+
+```
+
+El BIC no pudo ser obtenido, debido a que al ingresar los datos a la función, esta detecta la presencia de valores negativos al intentar procesarlos, lo cual no va acorde a una distribución gamma.
+
+##### a.1.II) Selección de variables considerando en el modelo los efectos principales de las variables, así como su interacción <br>
+
+###### a.1.II.1) Un método stepwise <br>
+
+```{r, include=FALSE, warning=FALSE, eval=FALSE}
+
+#Modelo
+
+Datos1.glm <- glm(brozek ~ (.)^2, family = Gamma(link = "identity"), data = Datos1)
+summary(Datos1.glm)
+
+#Pasos
+
+Datos1.step <- stepAIC(Datos1.glm, trace = FALSE) 
+summary(Datos1.step)
+AIC(Datos1.step)
+
+# La salida es un objeto similar al glm
+Datos1.step$formula
+
+# se pueden verificar los supuestos directamente
+library(DHARMa)
+set.seed(123)
+Datos1.stepres <- simulateResiduals(fittedModel = Datos1.step)
+X11()
+plot(Datos1.stepres)
+summary(Datos1.step)
+
+
+```
+
+El BIC no pudo ser obtenido, debido a que al ingresar los datos a la función, esta detecta la presencia de valores negativos al intentar procesarlos, lo cual no va acorde a una distribución gamma.
+
+###### a.1.II.2) Método lasso. <br>
+
+```{r, include=FALSE, warning=FALSE,eval=FALSE}
+
+
+formu <- brozek ~ 
+			  p(age, pen = "lasso") * p(weight, pen = "lasso")*
+              p(height, pen = "lasso") * p(adipos, pen = "lasso")*
+              p(neck, pen = "lasso") * p(chest, pen = "lasso") *
+              p(abdom, pen = "lasso") * p(hip, pen = "lasso") *
+			  p(thigh, pen = "lasso") * p(knee, pen = "lasso") *
+			  p(ankle, pen = "lasso") * p(biceps, pen = "lasso") *
+			  p(forearm, pen = "lasso") * p(wrist, pen = "lasso")
+
+Datos1.fit <- glmsmurf(formula = formu, Gamma(link = "identity"), data = Datos1, 
+                        pen.weights = "glm.stand", lambda = "is.bic", control=list(lambda.length=100, reest = TRUE, lambda.reest=TRUE))
+
+plot_lambda(Datos1.fit)
+Datos1.fit$lambda
+log(Datos1.fit$lambda)
+
+summary(Datos1.fit)
+
+
+
+```
+
+El BIC no pudo ser obtenido, debido a que al ingresar los datos a la función, esta detecta la presencia de valores negativos al intentar procesarlos, lo cual no va acorde a una distribución gamma.
+
+
+#### a.2)Gamma con liga log <br>
+Considerando un modelo para datos continuos con liga log y
+distribución Gamma, pocedemos a realizar la selección de variables
+utilizando los siguientes métodos y registrando el BIC del modelo
+resultante.
+
+##### a.2.I)Selección de variables considerando sólo los efectos principales de las variables <br>
+
+###### a.2.I.1)Mejor subconjunto <br>
+
+Comenzaremos con el metodo de encontrar el mejor subconjunto.
+
+```{r, include=FALSE, warning=FALSE,eval=FALSE}
+
+Datos1xy=Datos1[,c(2:15,1)]
+
+best.identity <- bestglm(Datos1xy,
+                      IC = "BIC",                 
+                      family=Gamma("log"),
+                      method = "exhaustive")
+summary(best.identity$BestModel)
+
+
+```
+
+El BIC no pudo ser obtenido, debido a que al ingresar los datos a la función, esta detecta la presencia de valores negativos al intentar procesarlos, lo cual no va acorde a una distribución gamma.
+
+###### a.2.I.2) Un método stepwise <br>
+
+```{r, include=FALSE, warning=FALSE,eval=FALSE}
+
+#Modelo
+
+Datos1.glm <- glm(brozek ~ ., family = Gamma(link = "log"), data = Datos1)
+summary(Datos1.glm)
+
+#Pasos
+
+Datos1.step <- stepAIC(Datos1.glm, trace = FALSE,k=log(dim(Datos1)[1])) 
+
+summary(Datos1.step)
+AIC(Datos1.step)
+
+# La salida es un objeto similar al glm
+Datos1.step$formula
+
+# se pueden verificar los supuestos directamente
+library(DHARMa)
+set.seed(123)
+Datos1.stepres <- simulateResiduals(fittedModel = Datos1.step)
+
+
+```
+
+El BIC no pudo ser obtenido, debido a que al ingresar los datos a la función, esta detecta la presencia de valores negativos al intentar procesarlos, lo cual no va acorde a una distribución gamma.
+
+###### a.2.I.3) Método lasso. <br>
+
+```{r, include=FALSE, warning=FALSE,eval=FALSE}
+
+
+formu <- brozek ~ p(age, pen = "lasso") + p(weight, pen = "lasso")+
+              p(height, pen = "lasso") + p(adipos, pen = "lasso")+
+              p(neck, pen = "lasso") + p(chest, pen = "lasso") +
+              p(abdom, pen = "lasso") + p(hip, pen = "lasso") +
+			  p(thigh, pen = "lasso") + p(knee, pen = "lasso") +
+			  p(ankle, pen = "lasso") + p(biceps, pen = "lasso") +
+			  p(forearm, pen = "lasso") + p(wrist, pen = "lasso") 
+
+Datos1.fit <- glmsmurf(formula = formu, Gamma(link = "log"), data = Datos1, 
+                        pen.weights = "glm.stand", lambda = "is.bic", control=list(lambda.length=200, reest = TRUE, lambda.reest=TRUE))
+
+plot_lambda(Datos1.fit)
+Datos1.fit$lambda
+log(Datos1.fit$lambda)
+
+summary(Datos1.fit)
+
+
+```
+
+El BIC no pudo ser obtenido, debido a que al ingresar los datos a la función, esta detecta la presencia de valores negativos al intentar procesarlos, lo cual no va acorde a una distribución gamma.
+
+##### a.2.II) Selección de variables considerando en el modelo los efectos principales de las variables, así como su interacción <br>
+
+###### a.2.II.1) Un método stepwise <br>
+
+```{r, include=FALSE, warning=FALSE,eval=FALSE}
+
+#Modelo
+
+Datos1.glm <- glm(brozek ~ (.)^2, family = Gamma(link = "log"), data = Datos1)
+summary(Datos1.glm)
+
+#Pasos
+
+Datos1.step <- stepAIC(Datos1.glm, trace = FALSE) 
+summary(Datos1.step)
+AIC(Datos1.step)
+
+# La salida es un objeto similar al glm
+Datos1.step$formula
+
+# se pueden verificar los supuestos directamente
+library(DHARMa)
+set.seed(123)
+Datos1.stepres <- simulateResiduals(fittedModel = Datos1.step)
+X11()
+plot(Datos1.stepres)
+summary(Datos1.step)
+
+
+```
+
+El BIC no pudo ser obtenido, debido a que al ingresar los datos a la función, esta detecta la presencia de valores negativos al intentar procesarlos, lo cual no va acorde a una distribución gamma.
+
+###### a.2.II.2) Método lasso. <br>
+
+```{r, include=FALSE, warning=FALSE,eval=FALSE}
+
+
+formu <- brozek ~ 
+			  p(age, pen = "lasso") * p(weight, pen = "lasso")*
+              p(height, pen = "lasso") * p(adipos, pen = "lasso")*
+              p(neck, pen = "lasso") * p(chest, pen = "lasso") *
+              p(abdom, pen = "lasso") * p(hip, pen = "lasso") *
+			  p(thigh, pen = "lasso") * p(knee, pen = "lasso") *
+			  p(ankle, pen = "lasso") * p(biceps, pen = "lasso") *
+			  p(forearm, pen = "lasso") * p(wrist, pen = "lasso")
+
+Datos1.fit <- glmsmurf(formula = formu, Gamma(link = "log"), data = Datos1, 
+                        pen.weights = "glm.stand", lambda = "is.bic", control=list(lambda.length=100, reest = TRUE, lambda.reest=TRUE))
+
+plot_lambda(Datos1.fit)
+Datos1.fit$lambda
+log(Datos1.fit$lambda)
+
+summary(Datos1.fit)
+
+
+
+```
+
+El BIC no pudo ser obtenido, debido a que al ingresar los datos a la función, esta detecta la presencia de valores negativos al intentar procesarlos, lo cual no va acorde a una distribución gamma.
+
+#### b) Usando, en los modelos, de forma adicional, la versión al cuadrado de las variables  <br>
+
+##### b.I) Selección de variables considerando los efectos principales y las variables al cuadrado <br>
+
+###### b.I.1) Mejor subconjunto <br>
+
+Comenzaremos con el metodo de encontrar el mejor subconjunto.
+
+```{r, include=FALSE, warning=FALSE}
+
+age2 = '^'(Datos1$age,2)
+weight2 = '^'(Datos1$weight,2) 
+height2= '^'(Datos1$height,2)
+adipos2= '^'(Datos1$adipos,2)
+neck2= '^'(Datos1$neck,2)
+chest2= '^'(Datos1$chest,2)
+abdom2= '^'(Datos1$abdom,2)
+hip2= '^'(Datos1$hip,2)
+thigh2= '^'(Datos1$thigh,2)              
+knee2 = '^'(Datos1$knee,2)
+ankle2 = '^'(Datos1$ankle,2)
+biceps2= '^'(Datos1$biceps,2)
+forearm2= '^'(Datos1$forearm,2)
+wrist2= '^'(Datos1$wrist,2)
+age = Datos1$age
+weight = Datos1$weight 
+height= Datos1$height
+adipos= Datos1$adipos
+neck= Datos1$neck
+chest= Datos1$chest
+abdom= Datos1$abdom
+hip= Datos1$hip
+thigh= Datos1$thigh              
+knee = Datos1$knee
+ankle = Datos1$ankle
+biceps= Datos1$biceps
+forearm = Datos1$forearm
+wrist= Datos1$wrist
+brozek = Datos1$brozek
+Datos1xy=data.frame(cbind(age2,weight2,height2,adipos2,neck2,
+               chest2,abdom2,hip2,thigh2,knee2,
+               ankle2,biceps2,forearm2,wrist2,
+               brozek))
+
+
+best.identity <- bestglm(Datos1xy,
+                      IC = "BIC",                 
+                      family=gaussian("identity"),
+                      method = "exhaustive")
+summary(best.identity$BestModel)
+
+
+```
+
+El BIC obtenido fue de:
+
+```{r, echo=FALSE, warning=FALSE}
+
+BIC(best.identity$BestModel)
+
+```
+
+###### b.I.2) Un método stepwise <br>
+
+```{r, include=FALSE, warning=FALSE}
+
+#Modelo
+
+Datos1.glm <- glm(brozek ~ .+ I(age^2)+I(weight^2)+I(height^2)+I(adipos^2)+I(neck^2)+I(chest^2)+I(abdom^2)+I(hip^2)+I(thigh^2)+
+             I(knee^2)+I(ankle^2)+I(biceps^2)+I(forearm^2)+I(wrist^2), family = gaussian(link = "identity"),data=Datos1)
+summary(Datos1.glm)
+
+#Pasos
+
+Datos1.step <- stepAIC(Datos1.glm, trace = FALSE,k=log(dim(Datos1)[1])) 
+
+summary(Datos1.step)
+AIC(Datos1.step)
+
+# La salida es un objeto similar al glm
+Datos1.step$formula
+
+# se pueden verificar los supuestos directamente
+library(DHARMa)
+set.seed(123)
+Datos1.stepres <- simulateResiduals(fittedModel = Datos1.step)
+
+
+```
+
+El BIC obtenido fue de:
+
+```{r, echo=FALSE, warning=FALSE}
+
+BIC(Datos1.step)
+
+```
+
+###### b.I.3) Método lasso. <br>
+
+```{r, include=FALSE, warning=FALSE}
+
+
+formu <- brozek ~ p(age, pen = "lasso") + p(weight, pen = "lasso")+
+              p(height, pen = "lasso") + p(adipos, pen = "lasso")+
+              p(neck, pen = "lasso") + p(chest, pen = "lasso") +
+              p(abdom, pen = "lasso") + p(hip, pen = "lasso") +
+			  p(thigh, pen = "lasso") + p(knee, pen = "lasso") +
+			  p(ankle, pen = "lasso") + p(biceps, pen = "lasso") +
+			  p(forearm, pen = "lasso") + p(wrist, pen = "lasso")+
+  
+  p(I(age^2), pen = "lasso") + p(I(weight^2), pen = "lasso")+
+              p(I(height^2), pen = "lasso") + p(I(adipos^2), pen = "lasso")+
+              p(I(neck^2), pen = "lasso") + p(I(chest^2), pen = "lasso") +
+              p(I(abdom^2), pen = "lasso") + p(I(hip^2), pen = "lasso") +
+			  p(I(thigh^2), pen = "lasso") + p(I(knee^2), pen = "lasso") +
+			  p(I(ankle^2), pen = "lasso") + p(I(biceps^2), pen = "lasso") +
+			  p(I(forearm^2), pen = "lasso") + p(I(wrist^2), pen = "lasso")
+
+Datos1.fit <- glmsmurf(formula = formu, gaussian(link = "identity"), data = Datos1, 
+                        pen.weights = "glm.stand", lambda = "is.bic", control=list(lambda.length=200, reest = TRUE, lambda.reest=TRUE))
+
+plot_lambda(Datos1.fit)
+Datos1.fit$lambda
+log(Datos1.fit$lambda)
+
+summary(Datos1.fit)
+
+
+```
+
+El BIC obtenido fue de:
+
+```{r, echo=FALSE, warning=FALSE}
+
+BIC(Datos1.fit)
+
+```
+
+##### b.II) Selección de variables considerando en el modelo los efectos principales de las variables,las variables al cuadrado, así como su interacción <br>
+
+En esta sección, realizaremos algo casi análogo al inciso anterior, solo
+que en esta ocasión, si se van a considerar las diversas interacciones
+de las covariables, asi podremos ver si hay una mejoria o todo lo
+contrario.
+
+###### b.II.1) Un método stepwise <br>
+
+```{r, include=FALSE, warning=FALSE}
+
+#Modelo
+
+Datos1.glm <- glm(brozek ~ + I(age^2)+I(weight^2)+I(height^2)+I(adipos^2)+I(neck^2)+I(chest^2)+I(abdom^2)+I(hip^2)+I(thigh^2)+
+             I(knee^2)+I(ankle^2)+I(biceps^2)+I(forearm^2)+I(wrist^2)+(.)^2, family = gaussian(link = "identity"), data = Datos1)
+summary(Datos1.glm)
+
+#Pasos
+
+Datos1.step <- stepAIC(Datos1.glm, trace = FALSE) 
+summary(Datos1.step)
+AIC(Datos1.step)
+
+# La salida es un objeto similar al glm
+Datos1.step$formula
+
+# se pueden verificar los supuestos directamente
+library(DHARMa)
+set.seed(123)
+Datos1.stepres <- simulateResiduals(fittedModel = Datos1.step)
+X11()
+plot(Datos1.stepres)
+summary(Datos1.step)
+
+
+```
+
+El BIC obtenido fue de:
+
+```{r, echo=FALSE, warning=FALSE}
+
+BIC(Datos1.step)
+
+```
+
+###### b.II.2) Método lasso. <br>
+
+```{r, include=FALSE, warning=FALSE,eval=FALSE}
+
+
+formu <- brozek ~ 
+        p(I(age^2), pen = "lasso") + p(I(weight^2), pen = "lasso")+
+              p(I(height^2), pen = "lasso") + p(I(adipos^2), pen = "lasso")+
+              p(I(neck^2), pen = "lasso") + p(I(chest^2), pen = "lasso") +
+              p(I(abdom^2), pen = "lasso") + p(I(hip^2), pen = "lasso") +
+			  p(I(thigh^2), pen = "lasso") + p(I(knee^2), pen = "lasso") +
+			  p(I(ankle^2), pen = "lasso") + p(I(biceps^2), pen = "lasso") +
+			  p(I(forearm^2), pen = "lasso") + p(I(wrist^2), pen = "lasso")+
+			  p(age, pen = "lasso") * p(weight, pen = "lasso")*
+              p(height, pen = "lasso") * p(adipos, pen = "lasso")*
+              p(neck, pen = "lasso") * p(chest, pen = "lasso") *
+              p(abdom, pen = "lasso") * p(hip, pen = "lasso") *
+			  p(thigh, pen = "lasso") * p(knee, pen = "lasso") *
+			  p(ankle, pen = "lasso") * p(biceps, pen = "lasso") *
+			  p(forearm, pen = "lasso") * p(wrist, pen = "lasso")
+
+Datos1.fit <- glmsmurf(formula = formu, gaussian(link = "identity"), data = Datos1, 
+                        pen.weights = "glm.stand", lambda = "is.bic", control=list(lambda.length=100, reest = TRUE, lambda.reest=TRUE))
+
+plot_lambda(Datos1.fit)
+Datos1.fit$lambda
+log(Datos1.fit$lambda)
+
+summary(Datos1.fit)
+
+
+
+```
+
+El BIC no pudo ser obtenido debido a que la gran cantidad de variables no permitió que se llevara el cálculo, por ello se marca como"SC" (sin computar).
+
+```{r, echo=FALSE, warning=FALSE,eval=FALSE}
+
+BIC(Datos1.fit)
+
+```
+### IV) Tabla de resultados <br>
+
+A continuación presentamos los diferentes modelos obtenidos, así como el
+BIC de cada uno.
+
+| Modelo 	| BIC 	| Variables utilizadas por el modelo 	|
+|---	|---	|---	|
+| Modelo para datos continuos con liga identidad y distribución Gaussiana (Solo efectos principales, usando subconjuntos) 	| 1444.647 	| weight,abdom,forearm,wrist 	|
+| Modelo para datos continuos con liga identidad y distribución Gaussiana (Solo efectos principales, usando método stepwise) 	| 1444.647 	| weight,abdom,forearm,wrist 	|
+| Modelo para datos continuos con liga identidad y distribución Gaussiana (Solo efectos principales, usando método lasso) 	| 1453.812 	| weight,abdom,forearm,wrist 	|
+| Modelo para datos continuos con liga identidad y  distribución Gaussiana (Efectos principales e  interacciones, usando método stepwise) 	| 1590.282 	| age,weight,height,adipos, neck,chest,abdom,hip,thigh, knee,ankle,biceps,forearm, wrist,age:chest,age:ankle, age:wrist,weight:height, weight:adipos,weight:chest, weight:abdom,weight:knee, weight:ankle,weight:wrist, height:chest,height:hip, height:thigh,height:ankle, height:biceps,height:wrist, adipos:chest,adipos:thigh, adipos:knee,adipos:ankle, adipos:biceps,adipos:wrist, neck:abdom,neck:thigh, neck:forearm,neck:wrist, chest:thigh,chest:knee, abdom:thigh,hip:thigh,hip:knee, hip:biceps,hip:wrist, knee:ankle,ankle:biceps, ankle:wrist,biceps:wrist, forearm:wrist 	|
+| Modelo para datos continuos con liga identidad y  distribución Gaussiana (Efectos principales e  interacciones, usando método lasso) 	| SC 	|  	|
+| Modelo para datos continuos con liga identidad y distribución Gamma (Solo efectos principales, usando subconjuntos) 	| N 	|  	|
+| Modelo para datos continuos con liga identidad y distribución Gamma (Solo efectos principales, usando método stepwise) 	| N 	|  	|
+| Modelo para datos continuos con liga identidad y distribución Gamma (Solo efectos principales, usando método lasso) 	| N 	|  	|
+| Modelo para datos continuos con liga identidad y  distribución Gamma (Efectos principales e  interacciones, usando método stepwise) 	| N 	|  	|
+| Modelo para datos continuos con liga identidad y  distribución Gamma (Efectos principales e  interacciones, usando método lasso) 	| N 	|  	|
+| Modelo para datos continuos con liga log y distribución Gamma (Solo efectos principales, usando subconjuntos) 	| N 	|  	|
+| Modelo para datos continuos con liga log y distribución Gamma (Solo efectos principales, usando método stepwise) 	| N 	|  	|
+| Modelo para datos continuos con liga log y distribución Gamma (Solo efectos principales, usando método lasso) 	| N 	|  	|
+| Modelo para datos continuos con liga log y  distribución Gamma (Efectos principales e  interacciones, usando método stepwise) 	| N 	|  	|
+| Modelo para datos continuos con liga log y  distribución Gamma (Efectos principales e  interacciones, usando método lasso) 	| N 	|  	|
+| Modelo para datos continuos con liga identidad y distribución Gaussiana (Efectos principales y las  variables al cuadrado,usando subconjuntos) 	| 1452.239 	| weight^2 ,abdom^2 , forearm^2 ,wrist^2 	|
+| Modelo para datos continuos con liga identidad y distribución Gaussiana (Efectos principales y variables al cuadrado,usando stepwise) 	| 1439.519 	| abdom,hip,wrist,age^2 , adipos^2 ,chest^2 ,hip^2 	|
+| Modelo para datos continuos con liga identidad y distribución Gaussiana (Efectos principales y variables al cuadrado,usando lasso) 	| 1460.039 	| adipos,abdom,wrist,neck^2, hip^2 	|
+| Modelo para datos continuos con liga identidad y distribución Gaussiana (Efectos principales,  variables al cuadrado e interacciones,usando  stepwise) 	| 1645.214 	| age^2 ,height^2 ,neck^2 , chest^2 ,abdom^2 ,ankle^2 , wrist^2,age,weight,height, adipos,neck,chest,abdom,hip, thigh,knee,ankle,biceps, forearm,wrist,age:weight,´ age:height,age:neck,age:chest, age:thigh,age:ankle,age:biceps, age:wrist,weight:height,  weight:neck,weight:hip, weight:thigh,weight:knee, weight:ankle,weight:biceps, weight:forearm,height:adipos, height:chest,height:hip, height:biceps,height:forearm, height:wrist, adipos:neck, adipos:knee,adipos:ankle, adipos:biceps, adipos:forearm, neck:thigh,neck:knee,chest:abdom, chest:thigh, chest:knee,chest:ankle, chest:forearm,abdom:hip,abdom:thigh,  abdom:wrist,hip:thigh,hip:knee, hip:biceps,hip:wrist,thigh:biceps, knee:ankle,knee:biceps,ankle:biceps,  ankle:wrist,biceps:wrist,forearm:wrist 	|
+| Modelo para datos continuos con liga identidad y distribución Gaussiana (Efectos principales, variables al cuadrado e interacciones,usando  lasso) 	| SC 	|  	|
+
+
+
+
+A manera de conclusión podemos notar que las variables que mas aparecen a los largo de los modelos son weight,abdom,forearm,wrist, por lo que podriamos considerarlas lo suficientemente informativas como para modelar por si solas a la E(brozek).
+
+También notamos que el mejor modelo (con menor BIC) fue cuando utilizamos el modelo para datos continuos con liga identidad y distribución Gaussiana (Efectos principales y 
+variables al cuadrado,usando stepwise).
+
+\newpage
+
+## Pregunta 2
+
+```{r,include=FALSE, echo=FALSE}
+rm(list=ls(all.names=T))
+gc()
+
+library(GGally)
+library(factoextra)
+library(tidyverse)
+
+
+datos2 = read.csv("Dat2Ex.csv",header = TRUE)
+str(datos2)
+summary(datos2)
+
+```
+
+Para el análisis de los datos primero verificamos que estén listo para
+su uso., vemos que hay valores en columnas que son NA, por lo cual
+hacemos un preprocesamiento en el cual vamos a eliminar todas las filas
+que contengan al menos un valor NA. Además renombramos las columnas
+deacuerdo a lo que representa cada varible.
+
+```{r, echo=FALSE}
+Datos2 <- na.omit(datos2)
+
+names(Datos2)=c("X", "Prepared", "SGrasp", "Confidence", 
+               "FocusLect",  "Rexamples", "Sstudents", "Ask",
+               "Outside", "Understanding", "Performance", "Instructor", "CourseWas")
+str(Datos2)
+
+```
+
+Ya que tenemos nuestros datos listos, podemos empezar hacer el análisis
+pertinente para hallar componentes principales.
+
+### I)
+
+Para resolver el primer inciso vamos a trabajar con los datos en escala
+original, por lo cual no vamos a usar ninguna transformación. Empezamos
+visualizando gráficas dos a dos de cada varible para ver la relción
+entre ellas.
+
+```{r, echo=FALSE, fig.width=3, fig.height=3}
+
+ggpairs(data=Datos2[,2:12], title="Datos")
+
+```
+
+Observamos que las escalas son iguales, pues cada variable puede tomar
+los mismo valores, asi podemos ver las frecuencias entre varibles, esto
+es porque los datos son ordinales, pero supongamos que son continuos.
+Seguimos con el análisis para encontrar componentes principales y tratar
+de encontrar uno o varios índices para resumir la información.
+Utilizamos la función prcomp() en nuestros datos.
+
+```{r, echo=TRUE, include=FALSE}
+
+Componente1<-prcomp(Datos2[,2:12], scale=FALSE)
+
+```
+
+Para checar el resultado y análizarlo vamos a generar un gráfica que nos
+ayuda mucho a la interpretación.
+
+```{r, echo=FALSE, fig.width=4, fig.height=4}
+
+biplot(Componente1)
+
+```
+
+Notamos que Understanding es la varible que tiene mayor peso en el
+componente principal uno, pues se puede interpretar que si el score de
+Understanding es menor a cero tiene menor valor en el componente
+principal uno, de igua forma Performance entre menor sea el score tiene
+menor valor en el componente principal uno. Mientrás que para la
+variable Intructor entre mayor sea su score tendrán mayor valor en el
+componente principal dos e igual para Performance entre menor sea su
+score menor el valor en el componente principal dos.
+
+Ahora bien, para completar la interpretación y la intuición vamos a
+crear más gráficas para ver los resultados.
+
+```{r, echo=FALSE, fig.width=3, fig.height=3}
+fviz_eig(Componente1)
+
+
+```
+
+Obtenemos el porcentaje de varianza que representa el primer componente,
+que más seguro es "Understanding", es aproximadamente el 50% mientrás
+que para los componentes 2 y 3 representan aproximadamente el 10% de la
+varianza y los demás decrece cada vez más, pero sin llegar a cero.
+
+Checamos otra gráfica para identificar la varible con mayor peso.
+
+```{r, echo=FALSE,fig.width=3, fig.height=3}
+fviz_pca_var(Componente1,
+             col.var = "contrib")
+
+```
+
+Análisamos que las varibles con mayor variabilidad son Understanding,
+Performance y Sstudents.
+
+Para ver más a detalle lo expuesto en las gráficas hacemos un resumen de
+los componentes principales para identificar el porcentaje de la
+varianza representada por cada componente.
+
+```{r, echo=FALSE, include=FALSE}
+print(summary(Componente1), digits=3)
+```
+
+Tenemos que la proporción de varianza que explica el primer componente
+es 53%, el segundo es de 10.7%, el tercero 7% y se va a cumulando con
+los demás componentes, igual que en la gráfica de barras que presentamos
+anteriormente. Por lo tanto, nos quedamos con los primeros tres
+componentes principales.
+
+Continuamos, calculamos los eigenvalores que son las desviaciones
+estándar al cuadrádo, es lo que representa el porcentaje de varianza.
+
+```{r, echo=FALSE, include=FALSE}
+round(Componente1$sdev^2, 2) #Varianzas de los CP, eigenvalores
+```
+
+Considerando el primer componente , con el 53% de variabilidad, es
+representado por 4.77 y mientrás que los demás componetes son menores a
+uno.
+
+Revisamos también los valores de los eigenvectores que son la solución,
+en total tenemos 11 eigenvectores.
+
+```{r, echo=FALSE, include=FALSE}
+round(Componente1$rotation, 2) #Matriz con eigenvectores
+
+```
+
+Estos eigenvectores son usados para los componentes principales, además
+vamos a calcular las medias de las varibles originales para centrar los
+datos.
+
+```{r, echo=FALSE, include=FALSE}
+round(Componente1$center, 2) #medias de las variables originales usadas para centrar los datos
+```
+
+Así como la desviación estándar de las varibles originales, dado que la
+escala es original desde que generamos los componentes principales, nos
+devuelve cero. Si hubieramos puesto scale=TRUE entonces nos regresaría
+los valores de las varianzas para que los valores tengan varianza uno.
+
+```{r, echo=FALSE, include=FALSE}
+round(Componente1$scale, 2)  #desviacion estandar de las variables originales, 0 si scale=FALSE
+```
+
+Ahora calculamos la matriz de los componentes principales, tiene 11
+columnas en la cual cada una de ellas tiene los datos proyectados al
+componente 1, al componente 2 y así sucesivamente...
+
+```{r, include= FALSE, echo=FALSE, include=FALSE}
+round(Componente1$x, 2) # Componentes principales de cada observación
+
+```
+
+Así concluimos que las mejores dimensiones son los primeros 3
+componentes principales.
+
+Para la siguiente parte del ejercicio consideramos una transformación de
+escala logaritmica en base normal para hacer un análisis similar al
+anterior.
+
+```{r, echo=TRUE, include=FALSE}
+Componente1log=prcomp(log(Datos2[,2:12]), scale = FALSE)
+print(summary(Componente1log), digits=3)
+```
+
+Con esta transformación observamos que la varibilidad del primer
+componente es del 52%, para el segundo componente es de 11%, mientrás
+que para el tercero es de 8%, los demás se mantienen casi iguales,
+tienen poca varianza.
+
+```{r, echo=FALSE, include=FALSE}
+round(Componente1log$sdev^2, 5)
+
+```
+
+Dado que es una trasformación en escala logaritmica la varianza es menor
+que en la escala original, sin embargo, podemos apreciar que para el
+primer componente, que tiene el 52% de varianza, tiene como valor
+0.4771, para el 11% es de 0.103, para el 8% de 0.07688, y los demás su
+varianza es pequeña y casi iguales entre ellas.
+
+Ahora obtenemos la matriz de eigenvectores, la solución en escala
+logaritmica.
+
+```{r, echo=FALSE, fig.width=2, fig.height=2, include=FALSE}
+round(Componente1log$rotation, 3)
+
+```
+
+Como se ve un observación transformada en con componentes principales.
+
+```{r, echo=FALSE, include=FALSE}
+round(Componente1log$x[1:1,], 3)
+
+```
+
+Ahora vamos a análizar cuales varibles están más correlacionadas con el
+componente principal uno, el dos y el tres, que son los que han salido
+más significativos.
+
+```{r, echo=FALSE, include=FALSE, include=FALSE}
+cor(cbind(Componente1log$x[,1:3],log(Datos2[,2:12])))
+
+
+```
+
+Observamos que para la primera dimensión las variables con mayor
+correlación son Sstudents, Instructor y Understanding. Están es sentido
+negativo tal y como lo sospechabamos en el análisis del principio.
+
+En la segunda dimensión(CP2) notamos que las varibles con mayor peso en
+la correlación son: Sstudents, Performance y Prepared, algo muy similar
+como en el principio.
+
+Para a tercera dimensión(CP3) se tiene que as varibles con mayor
+correlación son: Understanding, Rexamples y Ask.
+
+### II)
+
+Ahora vamos a ser el anásilis exploratorio factorial con los mismos
+datos. Vamos a considerar que las variables son continuas para análizar
+si se puede encontrar un resumen más pequeño que no contemple todas las
+variables.
+
+Así empezmos hacer el análisis exploratorio factorial considerando, en
+principio, con tre factores.
+
+```{r, echo=FALSE, include=FALSE}
+library(psych)
+library(GPArotation)
+factor1<-fa(Datos2[,2:12], nfactors=3)
+factor1
+```
+
+Análizamos la parte de Standardized loadings para leer los coeficientes
+estándarizados e interpretar los tres factores y su correlación con las
+variables.
+
+Entonces en el primer factor MR2 las correlaciones más significaticas
+son las variables Sstudents con 0.83, Ask con 0.81 y Performance con
+0.61, entonces a mayor calidad de estos tres aspectos(scores) hay mayor
+correlación.
+
+Para el factor MR1 las varibles más correlacionadas con este factor son
+SGrasp con 0.91, Prepared con 0.69 y Confidence con 0.60.
+
+Mientrás que el tercer factor MR3 las varibles con mayor correlación son
+Rexamples con 0.42 y FocusLect con 0.38
+
+Podemos visualizar los resultados proyectados de cada factor e
+identificar que variables pesan más en el análisis.
+
+```{r, echo=FALSE, fig.width=3, fig.height=3}
+# El resultado se puede visualizar con las siguientes 
+# herramientas
+biplot(factor1,choose=c(1,2,3))
+
+fa.diagram(factor1, cut=.5) # por default cut=.3
+
+```
+
+Podemos apreciar que las varibles para el primer factor son las misma
+que presentamos anteriormente Sstudents, Ask y Performance , para el
+segundo factor SGrasp, Prepared y Confidence, por último para el tercer
+factor Rexamples.
+
+En esta gráfica se puede apreciar que factores son los más importante y
+de igual manera las varibles más correlacionadas de cada factor. Notamos
+que las variables que hemos estado análizando aparecen y además algunas
+más, esto es porque nuestro punto de corte fue más alto que, el que
+considera la gráfica.
+
+Ahora vamos a verificar si este modelo con 3 factores es plausible con
+una prueba de hipótesis Chi.cuadráda.
+
+```{r, echo=FALSE, include=FALSE}
+
+summary(factor1)
+# Las pruebas Chi-square consideran
+# H0: el modelo parece plausible
+# Ha: parece que se requiere un modelo ms complejo (más factores)
+```
+
+Obtenemos que el p-value es menor a 5.4e-08, entonces es menor a 0.05.
+Por lo tanto rechazamos Ho, necesitamos un modelo más complejo, es
+decir, considerando más factores.
+
+Lo que vamos hacer ahora es aplicar una transformación a nuestros datos,
+en este caso será una transformación logaritmica, para identificar
+fatores interesantes y tal vez un modelo que sea plausible. de igual
+forma considerando solo tres factores.
+
+```{r, echo=FALSE, include=FALSE}
+factor1log<-fa(log(Datos2[,2:12]), nfactors=3)
+factor1log
+
+```
+
+Identificamos que en el factor MR1 las varibles que están más
+relacionadas con él son Rexamples con 0.72, FocusLect con 0.60 y
+Understanding con 0.57.
+
+Para el el segundo factor MR2 SGrasp y Confidence con 0.80.
+
+Y para el tercer factor la varible con más correlación con él es SGrasp
+con 0.88.
+
+Podemos visualizar el resultado con las siguientes gráficas.
+
+```{r, echo=FALSE, fig.width=3, fig.height=3}
+# El resultado se puede visualizar con las siguientes 
+# herramientas
+biplot(factor1log,choose=c(1,2,3))
+fa.diagram(factor1, cut=.8) # por default cut=.3
+```
+
+Tomando en cuenta el corte en 0.8 observamos las mismas varibles salen
+significativas en las gráfcias y además que a mayor valores en los
+scores de las varibles hay una mayor correlación positiva en los tres
+factores.
+
+Verificamos si este modelo transformado con tres factores es plausible.
+
+```{r, echo=FALSE, include=FALSE}
+summary(factor1log)
+
+```
+
+En principio tenemos un p-value \< 5.8e-08 , entonces rechazamos Ho, por
+lo tanto necesitamos un modelo más complejos, con más factores, para
+tener un modelo con el cual trabajar.
+
+En la última parte de la siguiente pregunta vamos a solucionar esto con
+algunas rotaciones, considerando escala ordinal en los datos, alguna
+transformación y por supuesto más factores para encontrar un modelo
+plausible con el cual hacer una buena interpretación con factores.
+
+### III)
+
+Para el inciso i), las modificaciones que vamos hacer es que dado que
+son datos son ordinales vamos a utilizar la matriz de correlación de los
+mismos para trabajar de manera adecuada y además vamos a ocupar una
+rotación de tipo "varimax", el cuál es un método de rotación ortogonal
+que minimiza el número de varibles que tiene saturaciones altas en cada
+factor.
+
+```{r, echo=FALSE, include=FALSE}
+library(psych)
+p=11
+pcam <- principal(cov(log(Datos2[,2:12])), cor="mixed", covar = TRUE, nfactor = p, rotate = "varimax",scores=TRUE)
+pcam
+
+```
+
+Entonces para el primer componente RC2 todos los valores son positivos,
+es decir, que entre mayor sea el valor de los scores mayor será el valor
+del componente. Consideramos el punto de corte como 0.2, obtenemos que
+los que los scores que tiene una correlación más alta con el componente
+son Performance con 0.90 y Sstudent con 0.29, me resumen una alta
+calidad en que los estudiantes están satisfechos con el instructor y
+además que es muy asencible con ellos, por lo tanto interpretamos que
+entre mayor sea la sencibilidad del intructor, los alumnos estarán más
+satisfechos con él.
+
+Para el componente RC3 considerando un punto de corte de 0.2, tenemos
+que los scores más significativos para este componente son Ask con 0.9 y
+Sstudents con 0.29 me resumen una alta calidad de que el profesor deja
+hacer preguntas y que sea sensible con los alumnos. Por lo tanto podemos
+interpretar que entre más sensible sea el profesor, dejará hacer
+preguntas a los alumnos.
+
+Para el componete RC4 considerando un punto de corte de 0.2 obtenemos
+que los scores más altos para este componente son: Understanding con
+0.86, Instructor y Rexamples con 0.21. Me resumen una alta calidad en
+que el profesor es conciente de la comprensión de los estudiantes, que
+utiliza ejemplos claros y relevantes, además de que la tiene una caildad
+alta al compararlo com otros profesores. Por lo tanto, podemos
+interpretar que entre más conciente sea el profesor de la compresión de
+sus alumnos, dará mejores ejemplos y por ende será de mejor calidad
+comparandolo con otros profesores.
+
+Por último, vamos a hacer modificaciones al análisis exploratorio
+factorial. Comenzamos considerando los datos de tipo ordinal, entonces
+vamos a trabajar con la matriz de covarianzas. Además vamos a considerar
+una rotación de tipo "Varimax" que es un método de rotación ortogonal
+que minimiza el número de variables que tienen saturaciones altas en
+cada factor para simplificar la interpretación de los factores.
+
+Pero antes que nada, vamos a hacer iteraciones para decidir el número de
+factores a incluir en el modelo.
+
+```{r, echo=FALSE, fig.width=4, fig.height=4}
+set.seed(123)
+parallel <- fa.parallel(log(Datos2[,2:12]), fa="fa", n.iter=100)
+```
+
+En la gráfica podemos observar que en los primeros factores la caida de
+la variabilidad es muy abrupta, de echo notamos que el primer factores
+es donde hay mayor variabiidad, por lo cual la prueba con interaciones
+nos ha arrojado elegir los primeros 2 factores. Con esto en mente
+comenzamos a implementar el modelo, haciendo las modificaciones antes
+mencionadas.
+
+```{r, echo=FALSE, include=FALSE}
+factlog<-fa(cov(log(Datos2[,2:12])), nfactors=2, cor="mixed", rotate="varimax")
+
+
+```
+
+Vamos a hacer una prueba de hipótesis para verificar si este número de
+factores es el indicado para el modelo.
+
+```{r, include=FALSE}
+summary(factlog)
+
+```
+
+La salida nos dice que dos factores son los indicados para el modelo,
+entonces podemos empezar la interpretación. Si fijamos el corte en 0.7
+obtenemos que las varibles más significativas son:
+
+```{r,fig.width=3, fig.height=3}
+fa.diagram(factlog, cut=0.7)
+```
+
+```{r, include=FALSE}
+factlog
+```
+
+Para el primer factor obtenemos que las varibles más significativas son
+Prepared y SGrasp que significa que el instructor está bien preparado y
+el instructor tiene compresión academica respectivamente, además los
+valores de las correlación con el primer factor son positivas entones
+entre mayor calidad de las varilbles mayor corralción. Por lo tanto si
+el instructor está bien preparado entonces tiene mayor compresión
+academica con los alumnos.
+
+Para el segundo factor las varibles más significativas son Sstudents y
+Performance las cuales significan que el intructor es sensible con los
+alumnos y satisfecho con el desempeño de los estudiantes
+respectivamente. Y ambos valores son positivos en la correlación con el
+factor. Por lo tanto, entre más sensible sea el instructor con los
+alumnos el instructor se siente satisfecho con el desempeño de los
+estudiantes.
+
+\newpage
+
+## Pregunta 3
+
+```{r, include=F}
+library(factoextra)
+library(NbClust)
+library(GGally)
+library(psych)
+
+data <- na.omit(read.csv("Dat3ExA.csv")[,-1])
+```
+
+### I) Kmeans
+
+Comenzamos por encontrar el mejor número de clusters para nuestros
+datos. Para esto nos guiamos por el método de siluetas y lo que nos
+indicó fueron dos grupos.
+
+```{r, echo=F}
+dataKmeans <- data
+
+kmeans_analysis <- function(x, max.nc = 7, k = 0, seed = 1, plot = F) {
+    if (k == 0) {
+      set.seed(seed)
+      if (plot)
+        plot(fviz_nbclust(x, FUNcluster = kmeans, method = c("silhouette"), k.max = max.nc, nstart = 20))
+      k <- NbClust(x, max.nc = max.nc, method = "kmeans", index = "silhouette")$Best.nc[[1]]
+    }
+  
+  kmeans <- kmeans(x, k, nstart = 25)
+  return(factor(kmeans$cluster))
+}
+
+dataKmeans$k <- kmeans_analysis(data)
+```
+
+Ahora analicemos los clusters usando kmedias y k=2
+
+```{r, echo=F, message=F}
+ggpairs(dataKmeans, title="Kmedias, Dos Grupos", aes(colour = k))
+```
+
+Como podemos observar, para todas las preguntas de la encuesta, el grupo
+1 tiene en promedio mayores expectativas de los servicios de Oddjob
+Airways y el del grupo 2 tiene medias o en general más bajas
+expectativas.\
+Esto nos sugirió que la elección de dos clusters es muy buena ya que
+podemos dividir a los clientes en los que tienen buenas expectativas de
+los servicios y los que casi no.\
+Podríamos estar tentados a separarlos en 3 grupos. Los de muchas
+expectativas, los de medias expectativas y los de baja. Sin embargo, al
+menos con kmeans no fue posible separarlos así de una forma muy
+satisfactoria.
+
+```{r, include=F}
+dataKmeans$k <- kmeans_analysis(data, k = 3)
+ggpairs(dataKmeans, title="Kmedias, Tres Grupos", aes(colour = k)) # No funciona tan bien hacer tres clusters con kmedias
+```
+
+\
+De igual manera, analizamos si podíamos conglomerar los datos de forma
+distinta estandarizando las muestras, pero llegamos a las mismas
+conclusiones: dos grupos tienen mucho sentido (además de que nuevamente
+es lo que sugiere siluetas) y tres grupos no es posible como hubiéramos
+deseado. Además los dos clusters encontrados con los datos
+estandarizados son prácticamente los mismos, con sólo 14 incongruencias
+de asignación entre los modelos.
+
+```{r, message=F, echo=F, include=F}
+dataKmeans$k <- kmeans_analysis(as.data.frame(scale(data))) #agregar parámetro plot=T para ver siluetas
+ggpairs(dataKmeans, title="Datos Estandarizados, Dos Grupos", aes(colour = k))
+
+# 14 incongruencias del modelo de datos escalado contra el normal
+print("Diferencias de asignación de grupos entre los modelos kmedias vs kmedias estandarizados:")
+sum(kmeans_analysis(data) == kmeans_analysis(as.data.frame(scale(data))))
+
+dataKmeans$k <- kmeans_analysis(as.data.frame(scale(data)), k = 3)
+ggpairs(dataKmeans, title="Datos Estandarizados, Tres Grupos", aes(colour = k))
+```
+
+Entre estas opciones que hicimos con kmedias optamos por elegir la de
+dos clusters y sin transformar a los datos, ya que no había mucha
+diferencia en transformarlos ni tampoco había mejores interpretaciones
+al tomar tres clusters.\
+Podemos ver en la siguiente gráfica que la primer componente principal,
+aunque no tiene tanta varianza explicada como quizás nos gustaría, sí
+tiene muchísima más varianza explicada en proporción con las demás, por
+lo que es la única que interpretaremos (60% contra menos del 10% para
+todas las demás).
+
+```{r, echo=F}
+R.CP <- prcomp(data, scale = T)
+fviz_pca_var(R.CP,
+             col.var = "contrib")
+```
+
+Esta primpera componente actúa como un resumen de todas las demás. Es
+decir, a mayor puntuación en esta componente mayor promedio en general
+en todas las respuestas del cuestionario.\
+Graficando los datos podemos ver más claro cómo se separan las
+observaciones de los clientes con más expectativas con los que no
+tantas.
+
+```{r, echo=F}
+dataKmeans$k <- kmeans_analysis(data)
+
+fviz_pca_ind(R.CP, geom.ind = "point", 
+             col.ind = dataKmeans$k, 
+             axes = c(1, 2), 
+             pointsize = 1.5,
+             submain="Kmedias, Dos Grupos")
+```
+
+A la derecha se encuentran los clientes con mayores expectativas en
+general en todas las preguntas del cuestionario, mientras que a la
+izquierda los de media y baja, según la primera componente principal.
+
+### II) Jerárquico Aglomerativo
+
+Habiendo optado por el modelo de kmedias con dos clusters, probamos
+también con el método aglomerativo jerárquico.\
+Para éste probamos tanto con los datos sin alteraciones como con los
+datos estandarizados. También probamos con todas las combinaciones de
+disimilaridades entre:\
+euclidea, máxima, canberra, manhattan y minkowski\
+para los clientes. Y las disimilaridades probadas para los clusters
+fueron:\
+ward D, ward D2, simple y completa.\
+La disimilaridad simple y completa fueron un fracaso. Para todas las
+demás combinaciones de disimilaridades en general no se tuvo un mal
+desempeño de los modelos.
+
+```{r, include=F}
+dataH <- data
+distances <- c("euclidian", "maximum", "canberra", "manhattan", "minkowski")
+clustDistances <- c("ward.D", "ward.D2", "single", "complete")
+
+hclust_analysis <- function(data, distance, clustDist) {
+  for (s1 in distance) {
+    dis <- dist(data, method = s1)
+    for (s2 in clustDist) {
+      jer <- hclust(dis, method = s2)
+      plot(jer, main = paste(s1, s2))
+    }
+  }
+}
+
+hclust_analysis(data, distances, clustDistances)
+hclust_analysis(as.data.frame(scale(data)), distances, clustDistances)
+```
+
+Sin embargo, aunque hubiéramos deseado encontrar un modelo que nos
+pudiera separar los datos en tres clusters (baja, media y alta
+expectativa), no fue posible de una manera satisfatoria. Aquí el modelo
+más parecido a lo que hubiéramos querido encontrar, usando la
+disimilaridad de Manhattan entre clientes y ward D2 entre clusters:
+
+```{r, echo=F, message=F}
+hEucD <- hclust(dist(data), method = "ward.D")
+hEucD2 <- hclust(dist(data), method = "ward.D2")
+hMaxD <- hclust(dist(data, method = "maximum"), method = "ward.D")
+hMaxD2 <- hclust(dist(data, method = "maximum"), method = "ward.D2")
+hCanD <- hclust(dist(data, method = "canberra"), method = "ward.D")
+hCanD2 <- hclust(dist(data, method = "canberra"), method = "ward.D2")
+hManD <- hclust(dist(data, method = "manhattan"), method = "ward.D")
+hManD2 <- hclust(dist(data, method = "manhattan"), method = "ward.D2")
+hMinD <- hclust(dist(data, method = "minkowski"), method = "ward.D")
+hMinD2 <- hclust(dist(data, method = "minkowski"), method = "ward.D2")
+
+
+dataH$c <- factor(cutree(hManD2, k = 3)) # cambiando el valor de k y el cluster graficamos las distintas
+                                         # opciones
+
+fviz_pca_ind(R.CP, geom.ind = "point", 
+             col.ind = dataH$c, 
+             axes = c(1, 2), 
+             pointsize = 1.5,
+             submain="Jerárquico, Tres Grupos, Manhattan-Ward D2")
+ggpairs(dataH, title="Jerárquico, Tres Grupos, Manhattan-Ward D2", aes(colour = c))
+
+```
+
+Aunque en componentes principales parece que logramos separar los datos
+medianamente bien en tres clusters, podemos ver que las medias de los
+grupos 1 y 3 en las respuestas de las preguntas no son tan
+exageradamente diferentes como cuando elegíamos dos clusters.
+
+Por lo que seguimos optando por dos clusters.\
+Usando clusters jerárquicos aglomerativos, el modelo que consideramos
+como el mejor para dos clusters es usando la disimilaridad de Manhattan
+entre clientes y ward D2 para clusters. El modelo fue muy parecido al de
+kmedias, con 71 incongruencias de los datos entre ambos modelos.
+
+```{r, echo=F}
+dataH$c <- factor(cutree(hManD2, k = 2))
+print("Incongruencias del modelo de kmedias con el hclust de Manhattan-WardD2:")
+sum(dataH$c != dataKmeans$k)
+fviz_pca_ind(R.CP, geom.ind = "point", 
+             col.ind = dataH$c, 
+             axes = c(1, 2), 
+             pointsize = 1.5,
+             submain = "Jerárquico, Dos Clusters, Manhattad-Ward D2")
+#ggpairs(dataH, title="Kmedias, Dos Grupos", aes(colour = c))
+```
+
+Pero creemos que el de kmedias sigue siendo mejor ya que hay algunas
+observaciones del grupo rojo (el de mayores expectativas) que se
+conjunden mucho con el azul (el de menores). Y nuestra intención es
+separar estos dos grupos muy bien para poder orientar de mejor manera la
+publicidad enviada a los mismos clientes.
+
+### III) Usando Componentes Principales
+
+Probamos a repetir los pasos anteriores pero ahora haciendo uso de los
+componentes principales. Tomamos los primeros 4, que acumulaban el 80%
+de la varianza explicada.
+
+```{r, include=F}
+summary(R.CP) # 4 acumulan casi 80%
+dataPC <- as.data.frame(R.CP$x[,1:4])
+```
+
+#### Kmeans
+
+Probando en kmedias con las componentes principales, comenzamos con dos
+clusters y la separación fue mejor a la anterior para nuestra
+consideración.
+
+```{r, message=F, echo=F}
+dataPCK <- dataPC
+dataPCK$k <- kmeans_analysis(dataPC, k=2)
+dataPCK$k <- factor(dataPCK$k, levels = c("1", "2"), labels = c("2", "1"))
+ggpairs(dataPCK, title="Kmedias CP, Dos Grupos", aes(colour = k))
+
+fviz_pca_ind(R.CP, geom.ind = "point", 
+             col.ind = dataPCK$k, 
+             axes = c(1, 2), 
+             pointsize = 1.5,
+             submain="kmedias CP, Dos Grupos")
+print("Incongruencias encontradas entre los modelos con k=2 de kmedias vs kmedias CP:")
+sum(dataPCK$k != dataKmeans$k) # Incongruencias de los modelos
+```
+
+La separación de este modelo podríamos decir que es más limpia que la de
+kmedias con k=2. Por lo que elegimos este modelo de Componentes
+Principales contra el anterior de kmedias con k=2 normal ya que la única
+diferencia entre los grupos es el valor de la primera componente
+principal, que como habíamos dicho, es un resumen de todas las
+calificaciones positivas de la encuesta.\
+Mostramos los pesos de la componente a continuación:
+
+```{r, echo=F}
+R.CP$rotation[,1] # Cargas de la primera CP
+```
+
+Probamos nuevamente a intentar separar en tres clusters ahora con las
+componentes principales y tuvimos un mejor resultado que con los
+aglomeramientos jerárquicos como se puede ver en las siguientes gráficas
+
+```{r, echo=F, message=F}
+dataPCK$k <- kmeans_analysis(dataPC, k=3)
+ggpairs(dataPCK, title="Kmedias CP, Tres Grupos", aes(colour = k))
+
+fviz_pca_ind(R.CP, geom.ind = "point", 
+             col.ind = dataPCK$k, 
+             axes = c(1, 2), 
+             pointsize = 1.5,
+             submain="Kmedias CP, Tres Grupos")
+```
+
+Las medias de la primera componente principal están mejor diferenciadas
+y le separación de grupos es más clara visualizando las muestras en
+componentes principales. Sin embargo hay unas observaciones azules que
+pensaríamos que sería mejor que fueran verdes\
+Entre el modelo anterior de CP con k=2 y este de CP con k=3 vamos a
+optar por el anterior porque para objetivos de publicidad es más
+sencillo enfocar la publicidad a los clientes con menos expectativas
+para que comiencen a confiar más en Oddjob Airways y a los que ya
+confían seguir tratándolos igual de bien. Pero es bueno tener en cuenta
+que este modelo existe en caso de que se quiera hacer una publicidad más
+explícita para más niveles de expectativas.
+
+#### Jerárquico Aglomerativo
+
+Finalmente probamos con los datos de las componentes principales a hacer
+clusters jerárquicos. Usamos todas las mismas disimilaridades que en el
+caso anterior.
+
+```{r, include=F}
+dataPCH <- dataPC
+
+hclust_analysis(dataPCH, distances, clustDistances)
+```
+
+Los mejores modelos para tres clusters fueron usando ward D2 entre
+clusters y euclidea o minkowski para clientes (las dos funcionaron
+bien). Mostramos a continuación la euclidea:
+
+```{r, message=F, echo=F}
+hEucD <- hclust(dist(dataPC), method = "ward.D")
+hEucD2 <- hclust(dist(dataPC), method = "ward.D2")
+hMaxD <- hclust(dist(dataPC, method = "maximum"), method = "ward.D")
+hMaxD2 <- hclust(dist(dataPC, method = "maximum"), method = "ward.D2")
+hCanD <- hclust(dist(dataPC, method = "canberra"), method = "ward.D")
+hCanD2 <- hclust(dist(dataPC, method = "canberra"), method = "ward.D2")
+hManD <- hclust(dist(dataPC, method = "manhattan"), method = "ward.D")
+hManD2 <- hclust(dist(dataPC, method = "manhattan"), method = "ward.D2")
+hMinD <- hclust(dist(dataPC, method = "minkowski"), method = "ward.D")
+hMinD2 <- hclust(dist(dataPC, method = "minkowski"), method = "ward.D2")
+
+dataPCH$c <- factor(cutree(hEucD2, 3))
+fviz_pca_ind(R.CP, geom.ind = "point", 
+             col.ind = dataPCH$c, 
+             axes = c(1, 2), 
+             pointsize = 1.5,
+             submain="Jerárquico CP, Tres Grupos, Euclidea-Ward D2")
+ggpairs(dataPCH, title="Jerárquico CP, Tres Grupos, Euclidea-Ward D2", aes(colour = c))
+```
+
+En comparación con la de kmedias CP y k=3 es muy parecida, pero a pesar
+de que en ésta la visualización de las muestras en CP se ve menos limpio
+el corte entre grupos, la separación de las medias en la primera
+componente principal es prácticamente como hubiéramos deseado y en la
+segunda componente, aunque es menos importante, también es más adecuada
+la separación. Es decir, en general el grupo 1 tiene un promedio más
+alto en todas sus respuestas, el grupo 2 un promedio medio y el tercer
+grupo un promedio de respuestas más bajo que el resto.\
+
+### Conclusiones Finales
+
+Tenemos dos modelos que a nuestro parecer son los ganadores.\
+Para dos clusters, nos vamos a quedar con el que usamos las componentes
+principales como datos y usamos kmedias.\
+Mientras que para tres clusters elegiremos el último visto, usando las
+componentes principales y hacemos aglomeramientos jerárquicos con
+métrica euclidea entre clientes y ward D2 entre clusters.\
+La elección de estos modelos dependerá de la publicidad que se quiera
+usar. Creemos que tiene más sentido enviar dos tipos diferentes de
+publicidad que tres, ya que podemos orientar las mejores ofertas y en
+general mayores publicidades a quienes tienen menos expectativas para
+intentar mejorarlas, mientras que para el grupo de altas expectativas
+debemos de seguir tratándolos como lo hemos hecho con anterioridad.\
+\
+A pesar de que optaremos por dos clusters, es muy bueno tener en cuenta
+que existe este otro modelo donde podemos separarlos en tres: los de
+alta, media y baja expectativa en caso de que se requieran aún más
+diferenciación de publicidad. Por ejemplo, podríamos dar las mayores
+ofertas a los de baja, enviar más publicidad a los de media y a los de
+alta seguir tratándolos con preferencia. Aunque en general es más
+sencillo pensar en dos sectores.\

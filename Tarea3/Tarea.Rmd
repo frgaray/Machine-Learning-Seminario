@@ -1,0 +1,370 @@
+---
+title: "Tarea 3"
+output: pdf_document
+---
+
+## Ejercicio 2
+
+```{r, include=F}
+library(caret)
+library(metrica)
+library(mlbench)
+data(PimaIndiansDiabetes2)
+data <- na.omit(PimaIndiansDiabetes2)
+
+set.seed(1)
+B <- 50
+partition <- createDataPartition(data$diabetes, p = .80, list = FALSE, times = B)
+
+```
+
+```{r, warning=F, include=F}
+#' GLMs binarios, múltiples ligas con y sin interacciones
+
+binary.rep.holdout <- function(partition, B = 50, link = "logit", interactions = T) {
+  binaryTrain <- data.frame(1, 2, 3)[-1,]
+  colnames(binaryTrain) <- c("accuracy", "recall", "specificity")
+  
+  for (i in 1:B) {
+    train <- partition[,i]
+    test <- (-train)
+    if (interactions)
+      trainModel <- glm(diabetes ~ .^2, data[train,], family = binomial(link = link))
+    else
+      trainModel <- glm(diabetes ~ ., data[train,], family = binomial(link = link))
+    testPredict <- predict(trainModel, newdata = data[test,], type = "response")
+    predb <- ifelse(testPredict >= 0.5,
+                   levels(data$diabetes)[2],
+                   levels(data$diabetes)[1])
+    resPod <- metrics_summary(obs = data[test,"diabetes"], pred = predb,
+                              metrics_list = c("accuracy", "recall", "specificity"),
+                              type = 'classification')
+    binaryTrain[i,] <- resPod[,2]
+  }
+  return(colMeans(binaryTrain))
+}
+
+for (link in c("logit", "probit", "cauchit", "cloglog")) {
+  for (i in c(F, T)) {
+    print(paste(link, "interactions =", i))
+    print(binary.rep.holdout(partition = partition, link = link, interactions = i))
+  }
+}
+
+# [1] "logit interactions = FALSE"
+#    accuracy      recall specificity 
+#   0.7841026   0.5676923   0.8923077 
+# [1] "logit interactions = TRUE"
+#    accuracy      recall specificity 
+#   0.7402564   0.5438462   0.8384615 
+# [1] "probit interactions = FALSE"
+#    accuracy      recall specificity 
+#   0.7815385   0.5607692   0.8919231 
+# [1] "probit interactions = TRUE"
+#    accuracy      recall specificity 
+#   0.7443590   0.5446154   0.8442308 
+# [1] "cauchit interactions = FALSE"
+#    accuracy      recall specificity 
+#   0.7741026   0.5746154   0.8738462 
+# [1] "cauchit interactions = TRUE"
+#    accuracy      recall specificity 
+#   0.7323077   0.5284615   0.8342308 
+# [1] "cloglog interactions = FALSE"
+#    accuracy      recall specificity 
+#   0.7530769   0.5146154   0.8723077 
+# [1] "cloglog interactions = TRUE"
+#    accuracy      recall specificity 
+#   0.7394872   0.5307692   0.8438462 
+
+```
+
+```{r, include=F}
+#' GLM logit, todas las interacciones, selección lasso
+library(glmnet)
+
+Xlasso <- model.matrix(diabetes ~ .^2, data)[,-1]
+
+lasso.rep.holdout <- function(partition, B = 50, lambda = "lambda.min") {
+  lassoTrain <- data.frame(1, 2, 3)[-1,]
+  colnames(lassoTrain) <- c("accuracy", "recall", "specificity")
+  for (i in 1:B) {
+    train <- partition[,i]
+    test <- (-train)
+    XlassoTrain <- Xlasso[train,]
+    YlassoTrain <- data[train, "diabetes"]
+    lassoTunning <- cv.glmnet(XlassoTrain, YlassoTrain, nfolds = 5,
+                              type.measure ="class",
+                              gamma = 0, relax = FALSE,
+                              family = "binomial", nlambda = 50)
+    preda <- predict(lassoTunning, newx = Xlasso[test,],
+                     type = "response", s = lambda)
+    predb <- ifelse(preda >= 0.5,
+                    levels(data$diabetes)[2],
+                    levels(data$diabetes)[1])
+    resPod <- metrics_summary(obs = data[test,"diabetes"], pred = predb,
+                              metrics_list = c("accuracy", "recall", "specificity"),
+                              type = 'classification')
+    lassoTrain[i,] <- resPod[,2]
+  }
+  return(colMeans(lassoTrain))
+}
+
+set.seed(1)
+lasso.rep.holdout(partition)
+# accuracy      recall specificity
+# 0.7771795   0.5315385   0.9000000 
+
+set.seed(1)
+lasso.rep.holdout(partition, lambda="lambda.1se")
+# accuracy      recall specificity
+# 0.7700000   0.4653846   0.9223077 
+```
+
+```{r, include=F}
+#' Naive Classifier
+library(e1071) 
+
+nc.rep.holdout <- function(partition, B=50) {
+  ncTrain <- data.frame(1, 2, 3)[-1,]
+  colnames(ncTrain) <- c("accuracy", "recall", "specificity")
+  for (i in 1:B) {
+    train <- partition[,i]
+    test <- (-train)
+    trainModel <- naiveBayes(diabetes ~ ., data[train,])
+    predb <- predict(trainModel, data[test,])
+    resPod <- metrics_summary(obs = data[test,"diabetes"], pred = predb,
+                              metrics_list=c("accuracy", "recall", "specificity"),
+                              type = 'classification')
+    ncTrain[i,] <- resPod[,2]
+  }
+  return(colMeans(ncTrain))
+}
+
+nc.rep.holdout(partition)
+#   accuracy      recall specificity 
+#  0.7641026   0.6353846   0.8284615 
+
+```
+
+```{r, include=F}
+#' LDA y QDA
+library(MASS)
+
+lda.rep.holdout <- function(partition, B=50, qda = F) {
+  ldaTrain <- data.frame(1, 2, 3)[-1,]
+  colnames(ldaTrain) <- c("accuracy", "recall", "specificity")
+  for (i in 1:B) {
+    train= partition[,i]
+    test = (-train)
+    if (qda) {
+      trainModel <- qda(diabetes ~ ., data[train,])
+    } else {
+      trainModel <- lda(diabetes ~ ., data[train,])
+    }
+    predictModel <- predict(trainModel, data[test,])
+    predb <- predictModel$class
+    resPod <- metrics_summary(obs = data[test,"diabetes"], pred = predb,
+                              metrics_list=c("accuracy", "recall", "specificity"),
+                              type = 'classification')
+    ldaTrain[i,] <- resPod[,2]
+  }
+  return(colMeans(ldaTrain))
+}
+
+lda.rep.holdout(partition)
+# accuracy      recall specificity 
+# 0.7830769   0.5707692   0.8892308 
+
+lda.rep.holdout(partition, qda=T)
+#   accuracy      recall specificity 
+# 0.7710256   0.5892308   0.8619231 
+
+
+```
+
+```{r, include=F}
+#' KNN
+
+library(class)
+
+Xknn = model.matrix(diabetes ~ ., data)[,-1]
+
+knn.rep.holdout <- function(partition, B = 50) {
+  knnTrain <- data.frame(1, 2, 3)[-1,]
+  colnames(knnTrain) <- c("accuracy", "recall", "specificity")
+  for (i in 1:B) {
+    train <- partition[,i]
+    test <- (-train)
+    XknnTrain <- Xknn[train, ]
+    XknnTest <- Xknn[test, ]
+    YknnTrain <- data[train, "diabetes"] 
+    knn.crosst <- tune.knn(x=XknnTrain, y=YknnTrain, k=1:20,
+                           tunecontrol=tune.control(sampling = "cross"), cross=5)
+    predb <- knn(train=XknnTrain, test=XknnTest, YknnTrain,
+              k=knn.crosst$best.parameters[[1]], use.all = TRUE)
+    resPod <- metrics_summary(obs = data[test, "diabetes"], pred = predb,
+                              metrics_list=c("accuracy", "recall", "specificity"),
+                              type = 'classification')
+    knnTrain[i,] <- resPod[,2]
+  }
+  return(colMeans(knnTrain))
+}
+
+set.seed(1)
+knn.rep.holdout(partition)
+#    accuracy      recall specificity 
+#   0.7602564   0.5007692   0.8900000 
+```
+
+```{r, include=F}
+#' Random Forest sin tunning
+
+library(randomForest)
+
+rf.rep.holdout <- function(partition, B = 50){
+  rfTrain <- data.frame(1, 2, 3)[-1,]
+  colnames(rfTrain) <- c("accuracy", "recall", "specificity")
+  for (i in 1:B) {
+    train <- partition[,i]
+    test <- (-train)
+    rfModel <- randomForest(diabetes ~ ., data = data[train,], importance = F)
+    predb <- predict(rfModel, newdata=data[test,], type="class")
+    resPod <- metrics_summary(obs = data[test,"diabetes"], pred = predb,
+                              metrics_list=c("accuracy", "recall", "specificity"),
+                              type = 'classification')
+    rfTrain[i,] <- resPod[,2]
+  }
+  return(colMeans(rfTrain))
+}
+
+set.seed(1)
+rf.rep.holdout(partition)
+# accuracy      recall specificity 
+# 0.7838462   0.5869231   0.8823077 
+```
+
+```{r, warning=F, include=F}
+#' Modelos presentables
+#' GLM logit, sin interacciones
+logitFit <- glm(diabetes ~ ., data, family = binomial())
+
+#' GLM probit, sin interacciones
+probitFit <- glm(diabetes ~ ., data, family = binomial(link = "probit"))
+
+#' Random Forest, sin tunning
+rfFit <- randomForest(diabetes ~ ., data, importance = F)
+
+#' LDA
+ldaFit <- lda(diabetes ~ ., data)
+      
+#' Todas Interacciones Lasso, lambda.min
+Xlasso <- model.matrix(diabetes~ .^2, data)[,-1]
+Ylasso <- data[,"diabetes"] 
+set.seed(1)
+lassoTunning <- cv.glmnet(Xlasso, Ylasso, nfolds = 5, type.measure ="class",
+                          gamma = 0, relax = FALSE, family = "binomial", nlambda = 50)
+
+#' QDA
+qdaFit <- qda(diabetes ~ ., data)
+
+#' Todas Interacciones Lasso, lambda.1se (mejor especificidad)
+set.seed(1)
+lassoTunning <- cv.glmnet(Xlasso, Ylasso, nfolds = 5, type.measure ="class",
+                          gamma = 0, relax = FALSE, family = "binomial", nlambda = 50)
+
+#' Naive Classifier
+ncFit <- naiveBayes(diabetes ~ ., data)
+
+#' KNN
+Xknn <- model.matrix(diabetes~ ., data)[,-1]
+Yknn <- data[,"diabetes"] 
+set.seed(1)
+knn.cross <- tune.knn(x = Xknn, y = Yknn, k = 1:20,
+                      tunecontrol=tune.control(sampling = "cross"), cross=5)
+knnFit <- knn(train=Xknn, test=Xknn, Yknn, k = knn.cross$best.parameters[[1]], use.all = TRUE)
+
+
+```
+
+En nuestro equipo hicimos una búsqueda de diferentes modelos para la predicción del
+padecimiento de diabetes en los pacientes.\
+Calificamos diferentes modelos tales como:\
+-Regresión logit, probit, cauchit, cloglog con todas las interacciones\
+-Regresión logit, probit, cauchit, cloglog sin interacciones\
+-Regresión logit, todas las interacciones, selección lasso, lambda.min\
+-Regresión logit, todas las interacciones, selección lasso, lambda.1se\
+-Naive Classifier\
+-LDA y QDA\
+-KNN, con tunning\
+-Random Forest, sin tunning
+
+
+A continuación mostramos una tabla donde se muestran los mejores modelos obtenidos
+(los demás, aunque los calificamos fueron muy pobres en comparación).\
+Mostramos su precisión global, su sensibilidad (recall) y su especificidad.
+
+| model                                      | accuracy  | recall    | specificity |
+|--------------------------------------------|-----------|-----------|-------------|
+| Logit, sin interacciones                   | 0.7841026 | 0.5676923 | 0.8923077   |
+| Random Forest, sin tunning                 | 0.7838462 | 0.5869231 | 0.8823077   |
+| LDA                                        | 0.7830769 | 0.5707692 | 0.8892308   |
+| Probit, sin interacciones                  | 0.7815385 | 0.5607692 | 0.8919231   |
+| Todas las interacciones, lasso, lambda.min | 0.7771795 | 0.5315385 | 0.9000000   |
+| QDA                                        | 0.7710256 | 0.5892308 | 0.8619231   |
+| Todas las interacciones, lasso, lambda.1se | 0.7700000 | 0.4653846 | 0.9223077   |
+| Naive Classifier                           | 0.7641026 | 0.6353846 | 0.8284615   |
+| KNN                                        | 0.7602564 | 0.5007692 | 0.8900000   |
+
+
+Como podemos apreciar, el modelo con mayor precisión global es la regresión logit
+sin interacciones, sin embargo Random Forest, LDA y probit sin interacciones no están
+muy lejos en comparación.\
+Por otro lado, el mejor modelo en cuanto a especificidad, es la regresión logit
+con lambda.min. Es decir, si quisiéramos reducir la mayor cantidad de falsos negativos
+podríamos usar este modelo sin ningún problema, ya que si futuras observaciones
+son clasificadas como "negativo" bajo este modelo, el $90\%$ de las veces habremos
+clasificado de manera correcta. Es decir, si llega un paciente nuevo y lo ponemos
+bajo este modelo y resulta ser un negativo, lo más probable es que este nuevo paciente no
+tenga diabetes. Si sale positivo podemos considerar mejor otro modelo:\
+Respecto a la mejor sensibilidad tenemos que Naive Classifier es el ganador por relativamente
+bastante. Es decir, desafortunadamente todos los demás modelos no están muy lejos de
+"un volado", y en este modelo es en el único que sobrepasamos el $60\%$.\
+
+Como decisión final, ya que lo que más nos interesaría es saber si un nuevo paciente
+es positivo a diabetes, no recomendaríamos usar sólo un modelo. Un protocolo que
+recomendamos usar es:\
+1. Utilizar el modelo con selección lasso lambda.min.\
+2a. Si sale negativo podemos estar bastante seguros de que no tiene diabetes.
+Podríamos considerar otro modelo para estar más seguros y no tendríamos que preocuparnos demasiado.\
+2b. Si sale positivo, probemos con el modelo de Naive Classifier. Si nuevamente sale
+positivo es bastante probable que el paciente en efecto tenga diabetes, por lo que
+la empresa debería proseguir como más convenga. Comenzar tratamientos, gastar en realizar
+estudios de confirmación más certeros, etc. \
+3b. Si sale negativo después de Naive Classifier, tampoco debemos cantar victoria
+ya que no es muy preciso. Lo mejor sería seguir contrastando con otros modelos ya que
+no convendría tomar una decisión al respecto en este caso.\
+
+### Variables Con Mayor Poder Predictivo
+
+Finalmente, observando los coefficientes de todos los modelos planteados, pudimos
+observar que las variables que más efecto tienen en el diagnóstico de diabetes son:\
+- En primer lugar y por mucho, la genética (pedigree)\
+- Y en segundo lugar, principalmente porque fueron variables de gran peso en el 
+Random Forest exclusivamente: la glucosa, la insulina y la edad.
+
+Entonces es muy importante tener en cuenta estos factores de los pacientes. Genéticamente
+no hay mucho por hacer, pero cuidar la glucosa y la insulina quizás pueda ayudar a
+que futuros pacientes tengan menor probabilidad de ser detectados con diabetes (como
+era de imaginarse).
+
+```{r, include=F}
+# Variables más significativas
+
+summary(logitFit) # glucose
+round(importance(rfFit), 2) # glucose, insulin, age
+ldaFit # pedigree
+coef(lassoTunning, s="lambda.min") # pedigree
+coef(lassoTunning, s="lambda.1se") # ¿glucose y pregnant:pedigree/pedigree:age?
+
+```
+
